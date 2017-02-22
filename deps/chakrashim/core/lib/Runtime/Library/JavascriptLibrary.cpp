@@ -1242,7 +1242,13 @@ namespace Js
 #if ENABLE_TTD
         if(scriptContext->GetThreadContext()->IsRuntimeInTTDMode())
         {
+            //
+            //TODO: when we formalize our telemetry library in JS land we will want to move these to a seperate Debug or Telemetry object instead of cluttering the global object
+            //
             AddFunctionToLibraryObjectWithPropertyName(globalObject, _u("telemetryLog"), &GlobalObject::EntryInfo::TelemetryLog, 3);
+
+            AddFunctionToLibraryObjectWithPropertyName(globalObject, _u("enabledDiagnosticsTrace"), &GlobalObject::EntryInfo::EnabledDiagnosticsTrace, 1);
+            AddFunctionToLibraryObjectWithPropertyName(globalObject, _u("emitTTDLog"), &GlobalObject::EntryInfo::EmitTTDLog, 2);
         }
 #endif
 
@@ -6054,6 +6060,16 @@ namespace Js
     {
         ArrayBuffer* arr = JavascriptArrayBuffer::Create(buffer, length, arrayBufferType);
         return arr;
+    }
+
+    Js::ArrayBuffer* JavascriptLibrary::CreateWebAssemblyArrayBuffer(uint32 length)
+    {
+        return WebAssemblyArrayBuffer::Create(nullptr, length, arrayBufferType);
+    }
+
+    Js::ArrayBuffer* JavascriptLibrary::CreateWebAssemblyArrayBuffer(byte* buffer, uint32 length)
+    {
+        return WebAssemblyArrayBuffer::Create(buffer, length, arrayBufferType);
     }
 
     SharedArrayBuffer* JavascriptLibrary::CreateSharedArrayBuffer(uint32 length)

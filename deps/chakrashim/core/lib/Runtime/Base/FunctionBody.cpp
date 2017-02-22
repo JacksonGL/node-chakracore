@@ -895,6 +895,9 @@ namespace Js
 
             // TODO: Get size of polymorphic caches, jitted code, etc.
         }
+
+        // We can't get here if the function is being jitted. Jitting was either completed or not begun.
+        this->counters.bgThreadCallStarted = false;
 #endif
 
         PHASE_PRINT_TRACE(Js::RedeferralPhase, this, _u("Redeferring function %d.%d: %s\n"),
@@ -2499,13 +2502,13 @@ namespace Js
     void ParseableFunctionInfo::Finalize(bool isShutdown)
     {
         __super::Finalize(isShutdown);
-
+        if (this->GetFunctionInfo())
+        {
+            // (If function info was never set, then initialization didn't finish, so there's nothing to remove from the dictionary.)
+            this->GetUtf8SourceInfo()->StopTrackingDeferredFunction(this->GetLocalFunctionId());
+        }
         if (!this->m_hasBeenParsed)
         {
-            if (!this->GetSourceContextInfo()->IsDynamic() && !this->GetIsTopLevel())
-            {
-                this->GetUtf8SourceInfo()->StopTrackingDeferredFunction(this->GetLocalFunctionId());
-            }
             PERF_COUNTER_DEC(Code, DeferredFunction);
         }
     }
@@ -4897,7 +4900,7 @@ namespace Js
         this->GetUtf8SourceInfo()->DeleteLineOffsetCache();
 
         // Reset to default.
-        this->flags = Flags_HasNoExplicitReturnValue;
+        this->flags = this->IsClassConstructor() ? Flags_None : Flags_HasNoExplicitReturnValue;
 
         ResetInParams();
 
@@ -6124,13 +6127,12 @@ namespace Js
 
     uint FunctionBody::NewLiteralRegex()
     {
-        if (this->byteCodeBlock)
+        if (this->GetLiteralRegexes() != nullptr)
         {
-            // This is a function nested in a redeferred function, so we won't make use of the index.
-            // Don't increment to avoid breaking thread-safety requirements of the compact counters.
+            // This is a function nested in a redeferred function, so we won't regenerate byte code and won't make use of the index.
+            // The regex count is already correct, so don't increment it.
             return 0;
         }
-        Assert(!this->GetLiteralRegexes());
         return IncLiteralRegexCount();
     }
 

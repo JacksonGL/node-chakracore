@@ -1633,7 +1633,7 @@ Symbol * ByteCodeGenerator::FindSymbol(Symbol **symRef, IdentPtr pid, bool forRe
         bool didTransferToFncVarSym = false;
 
         if (!PHASE_OFF(Js::OptimizeBlockScopePhase, top->byteCodeFunction) &&
-            sym->GetIsBlockVar() && 
+            sym->GetIsBlockVar() &&
             !sym->GetScope()->IsBlockInLoop() &&
             sym->GetSymbolType() == STFunction)
         {
@@ -2585,14 +2585,9 @@ bool FuncAllowsDirectSuper(FuncInfo *funcInfo, ByteCodeGenerator *byteCodeGenera
     if (funcInfo->IsGlobalFunction() && ((byteCodeGenerator->GetFlags() & fscrEval) != 0))
     {
         Js::JavascriptFunction *caller = nullptr;
-        if (Js::JavascriptStackWalker::GetCaller(&caller, byteCodeGenerator->GetScriptContext()))
+        if (Js::JavascriptStackWalker::GetCaller(&caller, byteCodeGenerator->GetScriptContext()) && caller->GetFunctionInfo()->GetAllowDirectSuper())
         {
-            Js::FunctionBody * callerBody = caller->GetFunctionBody();
-            Assert(callerBody);
-            if (callerBody->GetFunctionInfo()->GetAllowDirectSuper())
-            {
-                return true;
-            }
+            return true;
         }
     }
 
@@ -3318,13 +3313,23 @@ void VisitNestedScopes(ParseNode* pnodeScopeList, ParseNode* pnodeParent, ByteCo
 
             Js::ParseableFunctionInfo::NestedArray * parentNestedArray = parentFunc->GetNestedArray();
             Js::ParseableFunctionInfo* reuseNestedFunc = nullptr;
-            if (parentNestedArray && byteCodeGenerator->GetScriptContext()->IsScriptContextInNonDebugMode())
+            if (parentNestedArray)
             {
                 Assert(*pIndex < parentNestedArray->nestedCount);
                 Js::FunctionInfo * info = parentNestedArray->functionInfoArray[*pIndex];
                 if (info && info->HasParseableInfo())
                 {
                     reuseNestedFunc = info->GetParseableFunctionInfo();
+
+                    // If parentFunc was redeferred, try to set pCurrentFunction to this FunctionBody,
+                    // and cleanup to reparse (as previous cleanup stops at redeferred parentFunc).
+                    if (!byteCodeGenerator->IsInNonDebugMode()
+                        && !byteCodeGenerator->pCurrentFunction
+                        && reuseNestedFunc->IsFunctionBody())
+                    {
+                        byteCodeGenerator->pCurrentFunction = reuseNestedFunc->GetFunctionBody();
+                        byteCodeGenerator->pCurrentFunction->CleanupToReparse();
+                    }
                 }
             }
             PreVisitFunction(pnodeScope, byteCodeGenerator, reuseNestedFunc);
