@@ -654,11 +654,12 @@ bool IsolateShim::RunSingleStepOfReverseMoveLoop(v8::Isolate* isolate,
                      ~JsTTDMoveMode::JsTTDMoveScanIntervalForContinue);
     }
 
-    JsErrorCode error = JsTTDGetSnapTimeTopLevelEventMove(rHandle, _moveMode,
-                                                          0,
-                                                          nextEventTime,
-                                                          &snapEventTime,
-                                                          &snapEventEndTime);
+    JsErrorCode timeError = JsTTDGetSnapTimeTopLevelEventMove(rHandle,
+                                                              _moveMode,
+                                                              0,
+                                                              nextEventTime,
+                                                              &snapEventTime,
+                                                              &snapEventEndTime);
 
     if (timeError != JsNoError) {
         if (timeError == JsErrorCategoryUsage) {
@@ -670,7 +671,9 @@ bool IsolateShim::RunSingleStepOfReverseMoveLoop(v8::Isolate* isolate,
         }
     }
 
-    JsErrorCode moveError = JsTTDMoveToTopLevelEvent(rHandle, _moveMode, snapEventTime, *nextEventTime);
+    JsErrorCode moveError = JsTTDMoveToTopLevelEvent(rHandle, _moveMode,
+                                                     snapEventTime,
+                                                     *nextEventTime);
     if(moveError != JsNoError)
     {
         fprintf(stderr, "Fatal Error in Move Action!!!");
