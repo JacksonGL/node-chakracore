@@ -70,5 +70,9 @@ namespace Js
         virtual TTD::NSSnapObjects::SnapObjectType GetSnapTag_TTD() const override;
         virtual void ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc) override;
 #endif
+
+#if ENABLE_ALLOC_TRACING
+        virtual size_t ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const override;
+#endif
     };
 }

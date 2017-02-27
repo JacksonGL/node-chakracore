@@ -274,7 +274,7 @@ namespace TTD
         TTDWriteBytesToStreamCallback pfWriteBytesToStream;
         TTDFlushAndCloseStreamCallback pfFlushAndCloseStream;
 
-        //Current location that we are writing TT data into as a utf8 encoded uri (we may have several sub paths from the root for writting different parts of the log)
+        //Current location that we are writing TT data into as a utf8 encoded uri (we may have several sub paths from the root for writing different parts of the log)
         size_t ActiveTTUriLength;
         const char* ActiveTTUri;
     };

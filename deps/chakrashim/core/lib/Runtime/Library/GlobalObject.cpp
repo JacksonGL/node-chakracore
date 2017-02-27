@@ -1654,7 +1654,7 @@ LHexError:
 
         if(args.Info.Count != 2 || !Js::JavascriptString::Is(args[1]))
         {
-            jslib->GetFalse();
+            return jslib->GetFalse();
         }
 
         if(function->GetScriptContext()->ShouldPerformReplayAction())

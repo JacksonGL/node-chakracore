@@ -1580,4 +1580,11 @@ namespace Js
         this->lastIndexVar = lastVar;
     }
 #endif
+
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptRegExp::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        return sizeof(JavascriptRegExp) + (this->pattern->GetSource().GetLength() * sizeof(char16));
+    }
+#endif
 } // namespace Js

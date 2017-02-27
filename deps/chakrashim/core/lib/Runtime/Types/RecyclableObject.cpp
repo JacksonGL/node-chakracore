@@ -96,6 +96,13 @@ namespace Js
             scriptContext->instanceCount[typeId]++;
         }
 #endif
+
+#if ENABLE_ALLOC_TRACING
+        if(scriptContext->GetThreadContext()->AllocSiteTracer != nullptr)
+        {
+            scriptContext->GetThreadContext()->AllocSiteTracer->AddAllocation(this);
+        }
+#endif
     }
 #endif
 
@@ -246,6 +253,13 @@ namespace Js
     void RecyclableObject::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
         TTDAssert(false, "Missing subtype implementation.");
+    }
+#endif
+
+#if ENABLE_ALLOC_TRACING
+    size_t RecyclableObject::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        return sizeof(RecyclableObject);
     }
 #endif
 

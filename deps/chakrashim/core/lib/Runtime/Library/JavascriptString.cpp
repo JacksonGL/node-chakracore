@@ -3023,6 +3023,20 @@ case_2:
         return result;
     }
 
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptString::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        if(this->IsFinalized())
+        {
+            return sizeof(JavascriptString) * (this->GetLength() * sizeof(char16));
+        }
+        else
+        {
+            return sizeof(JavascriptString);
+        }
+    }
+#endif
+
     bool JavascriptString::Equals(Var aLeft, Var aRight)
     {
         return JavascriptStringHelpers<JavascriptString>::Equals(aLeft, aRight);

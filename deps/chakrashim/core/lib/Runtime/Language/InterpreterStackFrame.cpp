@@ -1957,6 +1957,9 @@ namespace Js
             {
                 PROBE_STACK_PARTIAL_INITIALIZED_INTERPRETER_FRAME(functionScriptContext, Js::Constants::MinStackInterpreter + varSizeInBytes);
                 allocation = (Var*)_alloca(varSizeInBytes);
+#if DBG
+                memset(allocation, 0xFE, varSizeInBytes);
+#endif
                 stackAddr = reinterpret_cast<DWORD_PTR>(allocation);
             }
 
@@ -2004,6 +2007,15 @@ namespace Js
 
             threadContext->TTDLog->PushCallEvent(function, args.Info.Count, args.Values, isInFinally);
             exceptionFramePopper.PushInfo(threadContext->TTDLog, function);
+        }
+#endif
+
+#if ENABLE_ALLOC_TRACING
+        AllocTracing::AllocSiteExceptionFramePopper allocFramePopper;
+        if(threadContext->AllocSiteTracer != nullptr)
+        {
+            threadContext->AllocSiteTracer->PushCallStackEntry(function->GetFunctionBody());
+            allocFramePopper.PushInfo(threadContext->AllocSiteTracer);
         }
 #endif
 
@@ -2467,7 +2479,7 @@ namespace Js
 #endif
 
 #if ENABLE_TTD
-        AssertMsg(!SHOULD_DO_TTD_STACK_STMT_OP(this->scriptContext), "We never be fetching an opcode via this path if this is true!!!");
+        //AssertMsg(!SHOULD_DO_TTD_STACK_STMT_OP(this->scriptContext), "We never be fetching an opcode via this path if this is true!!!");
 #endif
 
         OpCodeType op = (OpCodeType)ReadOpFunc(ip);
@@ -2520,6 +2532,13 @@ namespace Js
         {
             this->scriptContext->GetThreadContext()->TTDLog->UpdateCurrentStatementInfo(m_reader.GetCurrentOffset());
         }
+
+#if ENABLE_ALLOC_TRACING
+        if(this->scriptContext->GetThreadContext()->AllocSiteTracer != nullptr)
+        {
+            this->scriptContext->GetThreadContext()->AllocSiteTracer->UpdateBytecodeIndex(m_reader.GetCurrentOffset());
+        }
+#endif
 
         OpCodeType op = (OpCodeType)ReadOpFunc(ip);
 
@@ -3456,7 +3475,7 @@ namespace Js
         if(interpreterExecutionMode == ExecutionMode::ProfilingInterpreter)
         {
 #if ENABLE_TTD
-            AssertMsg(!SHOULD_DO_TTD_STACK_STMT_OP(this->scriptContext), "We should have pinned into Interpreter mode in this case!!!");
+            //AssertMsg(!SHOULD_DO_TTD_STACK_STMT_OP(this->scriptContext), "We should have pinned into Interpreter mode in this case!!!");
 #endif
 
             isAutoProfiling = false;

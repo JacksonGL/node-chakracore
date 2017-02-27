@@ -60,6 +60,24 @@ class JITJavascriptString;
 #include "Debug/TTSupport.h"
 #include "Debug/TTSerialize.h"
 
+#if ENABLE_ALLOC_TRACING
+namespace AllocTracing
+{
+    class AllocTracer;
+
+    //A set of flags that indicate if a given allocation site has a memory warning associated with it
+    enum class MemoryAllocWarningFlag
+    {
+        None = 0x0,
+        LowDataContentObject = 0x1,
+        LowDataContentArrayObject = 0x2,
+        LowDataContentContainerObject = 0x4,
+        SparseArrayObject = 0x8
+    };
+    DEFINE_ENUM_FLAG_OPERATORS(MemoryAllocWarningFlag)
+}
+#endif
+
 ////////
 
 namespace Js
@@ -540,6 +558,10 @@ enum tagDEBUG_EVENT_INFO_TYPE
 #include "Debug/TTEvents.h"
 #include "Debug/TTActionEvents.h"
 #include "Debug/TTEventLog.h"
+#endif
+
+#if ENABLE_ALLOC_TRACING
+#include "Debug/AllocTracing.h"
 #endif
 
 #include "../WasmReader/WasmReader.h"

@@ -884,4 +884,32 @@ namespace Js
 
 #endif
 
+#if ENABLE_ALLOC_TRACING
+    size_t DynamicObject::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        return sizeof(DynamicObject);
+    }
+
+    size_t DynamicObject::ComputeObjPropertyAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        size_t pcount = 0;
+
+        int32 length = const_cast<DynamicObject*>(this)->GetPropertyCount();
+        for(int32 i = 0; i < length; ++i)
+        {
+            PropertyId pid = const_cast<DynamicObject*>(this)->GetPropertyId(i);
+            if(!IsInternalPropertyId(pid))
+            {
+                pcount++;
+            }
+        }
+
+        if(this->GetTypeId() == Js::TypeIds_Object && pcount <= 3)
+        {
+            mflag |= AllocTracing::MemoryAllocWarningFlag::LowDataContentObject;
+        }
+        return pcount * sizeof(Var);
+    }
+#endif
+
 } // namespace Js

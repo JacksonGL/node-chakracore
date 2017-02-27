@@ -19,7 +19,7 @@
 #define MAX_URI_LENGTH 512
 #define TTD_HOST_PATH_SEP "\\"
 
-void TTDHostBuildCurrentExeDirectory(char* path, size_t* pathLength)
+void TTDHostBuildCurrentExeDirectory(char* path, size_t* pathLength, size_t bufferLength)
 {
     wchar exePath[MAX_PATH];
     GetModuleFileName(NULL, exePath, MAX_PATH);
@@ -30,7 +30,7 @@ void TTDHostBuildCurrentExeDirectory(char* path, size_t* pathLength)
         --i;
     }
 
-    if(i * 3 > MAX_URI_LENGTH)
+    if(i * 3 > bufferLength)
     {
         printf("Don't overflow path buffer during conversion");
         exit(1);
@@ -84,7 +84,7 @@ JsTTDStreamHandle TTDHostOpen(size_t pathLength, const char* path, bool isWrite)
 #define MAX_URI_LENGTH 512
 #define TTD_HOST_PATH_SEP "/"
 
-void TTDHostBuildCurrentExeDirectory(char* path, size_t* pathLength)
+void TTDHostBuildCurrentExeDirectory(char* path, size_t* pathLength, size_t bufferLength)
 {
     char exePath[MAX_URI_LENGTH];
     //TODO: xplattodo move this logic to PAL
@@ -102,7 +102,13 @@ void TTDHostBuildCurrentExeDirectory(char* path, size_t* pathLength)
     }
     *pathLength = i + 1;
 
-    memcpy_s(path, MAX_URI_LENGTH, exePath, *pathLength);
+    if(*pathLength > bufferLength)
+    {
+        printf("Don't overflow path buffer during copy.");
+        exit(1);
+    }
+
+    memcpy_s(path, bufferLength, exePath, *pathLength);
 }
 
 int TTDHostMKDir(const char* path, size_t pathLength)
@@ -482,9 +488,9 @@ void Helpers::CreateTTDDirectoryAsNeeded(size_t* uriLength, char* uri, const cha
     }
 }
 
-void Helpers::GetTTDDirectory(const wchar* curi, size_t* uriLength, char* uri)
+void Helpers::GetTTDDirectory(const wchar* curi, size_t* uriLength, char* uri, size_t bufferLength)
 {
-    TTDHostBuildCurrentExeDirectory(uri, uriLength);
+    TTDHostBuildCurrentExeDirectory(uri, uriLength, bufferLength);
 
     Helpers::CreateTTDDirectoryAsNeeded(uriLength, uri, "_ttdlog", curi);
 }

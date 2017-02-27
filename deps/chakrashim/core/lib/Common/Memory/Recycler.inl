@@ -486,6 +486,14 @@ inline bool Recycler::TryGetWeakReferenceHandle(T* pStrongReference, RecyclerWea
     return this->weakReferenceMap.TryGetValue((char*) pStrongReference, (RecyclerWeakReferenceBase**)weakReference);
 }
 
+#if ENABLE_ALLOC_TRACING
+inline
+bool Recycler::IsAllocTrackable(void * candidate)
+{
+    return this->FindHeapBlock(candidate) != nullptr;
+}
+#endif
+
 inline HeapBlock*
 Recycler::FindHeapBlock(void* candidate)
 {

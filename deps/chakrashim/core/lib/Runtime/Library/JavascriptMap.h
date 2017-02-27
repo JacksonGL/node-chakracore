@@ -78,5 +78,9 @@ namespace Js
 
         static JavascriptMap* CreateForSnapshotRestore(ScriptContext* ctx);
 #endif
+
+#if ENABLE_ALLOC_TRACING
+        virtual size_t ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const override;
+#endif
     };
 }

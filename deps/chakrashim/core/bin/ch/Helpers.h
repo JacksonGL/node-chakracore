@@ -14,7 +14,7 @@ public :
 
     static void TTReportLastIOErrorAsNeeded(BOOL ok, const char* msg);
     static void CreateTTDDirectoryAsNeeded(size_t* uriLength, char* uri, const char* asciiDir1, const wchar* asciiDir2);
-    static void GetTTDDirectory(const wchar* curi, size_t* uriLength, char* uri);
+    static void GetTTDDirectory(const wchar* curi, size_t* uriLength, char* uri, size_t bufferLength);
 
     static JsTTDStreamHandle CALLBACK TTCreateStreamCallback(size_t uriLength, const char* uri, size_t asciiNameLength, const char* asciiName, bool read, bool write);
     static bool CALLBACK TTReadBytesFromStreamCallback(JsTTDStreamHandle handle, byte* buff, size_t size, size_t* readCount);

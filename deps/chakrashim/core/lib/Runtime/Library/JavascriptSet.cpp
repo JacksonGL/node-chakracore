@@ -376,4 +376,16 @@ namespace Js
         return res;
     }
 #endif
+
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptSet::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        if(this->set->Count() <= 4)
+        {
+            mflag |= AllocTracing::MemoryAllocWarningFlag::LowDataContentContainerObject;
+        }
+
+        return sizeof(JavascriptSet) + (this->set->Count() * sizeof(Var));
+    }
+#endif
 }

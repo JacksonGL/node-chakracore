@@ -11815,6 +11815,54 @@ Case0:
     }
 #endif
 
+#if ENABLE_ALLOC_TRACING
+    void JavascriptArray::CheckForArrayMemoryWarnings(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        if(this->GetLength() <= 3)
+        {
+            mflag |= AllocTracing::MemoryAllocWarningFlag::LowDataContentArrayObject;
+        }
+
+        uint32 index = Js::JavascriptArray::InvalidIndex;
+        while(true)
+        {
+            uint32 oldIndex = index;
+            index = this->GetNextIndex(index);
+            if(index == Js::JavascriptArray::InvalidIndex) // End of array
+            {
+                break;
+            }
+
+            bool singleSparse = (oldIndex == Js::JavascriptArray::InvalidIndex && index != 0);
+            bool bigGap = (oldIndex != Js::JavascriptArray::InvalidIndex && index >= oldIndex + 4);
+            if(singleSparse | bigGap)
+            {
+                mflag |= AllocTracing::MemoryAllocWarningFlag::SparseArrayObject;
+            }
+        }
+    }
+
+    size_t JavascriptArray::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        this->CheckForArrayMemoryWarnings(mflag);
+
+        uint32 count = 0;
+        uint32 index = Js::JavascriptArray::InvalidIndex;
+        while(true)
+        {
+            index = this->GetNextIndex(index);
+            if(index == Js::JavascriptArray::InvalidIndex) // End of array
+            {
+                break;
+            }
+
+            count++;
+        }
+
+        return sizeof(JavascriptArray) + (count * sizeof(Var));
+    }
+#endif
+
     JavascriptNativeArray::JavascriptNativeArray(JavascriptNativeArray * instance) :
         JavascriptArray(instance, false),
         weakRefToFuncBody(instance->weakRefToFuncBody)
@@ -11867,6 +11915,15 @@ Case0:
 #endif
 #endif
 
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptNativeIntArray::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        this->CheckForArrayMemoryWarnings(mflag);
+
+        return sizeof(JavascriptNativeIntArray) + (this->GetLength() * sizeof(int32));
+    }
+#endif
+
     JavascriptNativeFloatArray::JavascriptNativeFloatArray(JavascriptNativeFloatArray * instance, bool boxHead) :
         JavascriptNativeArray(instance)
     {
@@ -11900,6 +11957,16 @@ Case0:
 
         TTD::NSSnapObjects::SnapArrayInfo<double>* sai = TTD::NSSnapObjects::ExtractArrayValues<double>(this, alloc);
         TTD::NSSnapObjects::StdExtractSetKindSpecificInfo<TTD::NSSnapObjects::SnapArrayInfo<double>*, TTD::NSSnapObjects::SnapObjectType::SnapNativeFloatArrayObject>(objData, sai);
+    }
+#endif
+
+
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptNativeFloatArray::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        this->CheckForArrayMemoryWarnings(mflag);
+
+        return sizeof(JavascriptNativeFloatArray) + (this->GetLength() * sizeof(double));
     }
 #endif
 

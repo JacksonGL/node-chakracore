@@ -353,6 +353,16 @@ JsErrorCode CreateRuntimeCore(_In_ JsRuntimeAttributes attributes,
                 openResourceStream, readBytesFromStream, writeBytesToStream, flushAndCloseStream,
                 &CreateExternalObject_TTDCallback, &CreateJsRTContext_TTDCallback, &ReleaseJsRTContext_TTDCallback, &SetActiveJsRTContext_TTDCallback);
 
+            //Turn this on with TTD since we use the pin-to-interpreter and statement tracing functionality
+#if ENABLE_ALLOC_TRACING
+#if !ENABLE_TTD_DIAGNOSTICS_TRACING
+            if(isDebug) //if tracing diagnostics are on then so is statement tracing even if we aren't in replay mode
+#endif
+            {
+                threadContext->AllocSiteTracer = HeapNew(AllocTracing::AllocTracer);
+            }
+#endif
+
             return JsNoError;
         });
     }
@@ -3400,6 +3410,11 @@ CHAKRA_API JsTTDCreateReplayRuntime(_In_ JsRuntimeAttributes attributes, _In_rea
     return JsErrorCategoryUsage;
 #else
 
+    //TEMP FOR TESTING
+#if ENABLE_ALLOC_TRACING
+    enableDebugging = true;
+#endif
+
     return CreateRuntimeCore(attributes, infoUri, infoUriCount, false, true, enableDebugging, UINT_MAX, UINT_MAX,
         openResourceStream, readBytesFromStream, nullptr, flushAndCloseStream,
         threadService, runtime);
@@ -3498,6 +3513,13 @@ CHAKRA_API JsTTDStop()
         {
             scriptContext->GetThreadContext()->TTDLog->UnloadAllLogData();
         }
+
+#if ENABLE_ALLOC_TRACING
+        if(scriptContext->GetThreadContext()->AllocSiteTracer != nullptr)
+        {
+            scriptContext->GetThreadContext()->AllocSiteTracer->PrettyPrint(scriptContext->GetThreadContext());
+        }
+#endif
 
         return JsNoError;
     });

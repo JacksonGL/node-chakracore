@@ -200,6 +200,9 @@ ThreadContext::ThreadContext(AllocationPolicyManager * allocationPolicyManager, 
     , TTDLog(nullptr)
     , TTDRootNestingCount(0)
 #endif
+#if ENABLE_ALLOC_TRACING
+    , AllocSiteTracer(nullptr)
+#endif
 #ifdef ENABLE_DIRECTCALL_TELEMETRY
     , directCallTelemetry(this)
 #endif
@@ -401,6 +404,14 @@ ThreadContext::~ThreadContext()
         TT_HEAP_DELETE(TTD::EventLog, this->TTDLog);
         this->TTDLog = nullptr;
     }
+
+#if ENABLE_ALLOC_TRACING
+    if(this->AllocSiteTracer != nullptr)
+    {
+        HeapDelete(this->AllocSiteTracer);
+        this->AllocSiteTracer = nullptr;
+    }
+#endif
 #endif
 
 #ifdef LEAK_REPORT

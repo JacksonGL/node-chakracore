@@ -1534,6 +1534,11 @@ public:
 #ifdef RECYCLER_STRESS
     bool StressCollectNow();
 #endif
+
+#if ENABLE_ALLOC_TRACING
+    bool IsAllocTrackable(void * candidate);
+#endif
+
 private:
     HeapBlock* FindHeapBlock(void * candidate);
 

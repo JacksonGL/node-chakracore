@@ -23,7 +23,8 @@ JsRuntimeHandle chRuntime = JS_INVALID_RUNTIME_HANDLE;
 
 BOOL doTTRecord = false;
 BOOL doTTReplay = false;
-char ttUri[MAX_PATH * 3];
+const size_t ttUriBufferLength = MAX_PATH * 3;
+char ttUri[ttUriBufferLength];
 size_t ttUriLength = 0;
 UINT32 snapInterval = MAXUINT32;
 UINT32 snapHistoryLength = MAXUINT32;
@@ -906,13 +907,13 @@ int _cdecl wmain(int argc, __in_ecount(argc) LPWSTR argv[])
         {
             doTTRecord = true;
             wchar* ruri = argv[i] + wcslen(_u("-TTRecord="));
-            Helpers::GetTTDDirectory(ruri, &ttUriLength, ttUri);
+            Helpers::GetTTDDirectory(ruri, &ttUriLength, ttUri, ttUriBufferLength);
         }
         else if(wcsstr(argv[i], _u("-TTReplay=")) == argv[i])
         {
             doTTReplay = true;
             wchar* ruri = argv[i] + wcslen(_u("-TTReplay="));
-            Helpers::GetTTDDirectory(ruri, &ttUriLength, ttUri);
+            Helpers::GetTTDDirectory(ruri, &ttUriLength, ttUri, ttUriBufferLength);
         }
         else if(wcsstr(argv[i], _u("-TTSnapInterval=")) == argv[i])
         {

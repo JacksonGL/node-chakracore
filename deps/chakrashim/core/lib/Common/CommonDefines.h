@@ -387,8 +387,8 @@
 #define TTD_NATIVE_PROFILE_ARRAY_WORK_AROUND 1
 
 //Force debug or notjit mode
-#define TTD_FORCE_DEBUG_MODE 0
-#define TTD_FORCE_NOJIT_MODE 0
+#define TTD_FORCE_DEBUG_MODE 1
+#define TTD_FORCE_NOJIT_MODE 1
 
 //Enable various sanity checking features and asserts
 #if ENABLE_DEBUG_CONFIG_OPTIONS
@@ -412,6 +412,13 @@
 //#define TTD_SNAP_WRITER BinaryFormatWriter
 //#endif
 
+//Temp location for enabling allocation site tracing code -- right now we are using the TTD callstack so we need it if we turn this on
+#if DBG || defined(PROFILE_TYPES)
+#define ENABLE_ALLOC_TRACING 1
+#undef ENABLE_TTD_INTERNAL_DIAGNOSTICS
+#define ENABLE_TTD_INTERNAL_DIAGNOSTICS 0
+#endif
+
 #if ENABLE_TTD_INTERNAL_DIAGNOSTICS
 #define ENABLE_SNAPSHOT_COMPARE 1
 #define ENABLE_OBJECT_SOURCE_TRACKING 0
@@ -428,6 +435,7 @@
 #endif
 
 #define ENABLE_TTD_DIAGNOSTICS_TRACING (ENABLE_OBJECT_SOURCE_TRACKING || ENABLE_BASIC_TRACE || ENABLE_FULL_BC_TRACE)
+
 
 //End Time Travel flags
 ////////

@@ -891,6 +891,17 @@ namespace Js
 #endif
     }
 
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptArrayBuffer::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        if(this->bufferLength <= 8)
+        {
+            mflag |= AllocTracing::MemoryAllocWarningFlag::LowDataContentArrayObject;
+        }
+        return sizeof(JavascriptArrayBuffer) + this->bufferLength;
+    }
+#endif
+
     ProjectionArrayBuffer::ProjectionArrayBuffer(uint32 length, DynamicType * type) :
         ArrayBuffer(length, type, CoTaskMemAlloc)
     {

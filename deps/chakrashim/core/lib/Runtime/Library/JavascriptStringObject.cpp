@@ -432,4 +432,11 @@ namespace Js
         TTD::NSSnapObjects::StdExtractSetKindSpecificInfo<TTD::TTDVar, TTD::NSSnapObjects::SnapObjectType::SnapBoxedValueObject>(objData, this->value);
     }
 #endif
+
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptStringObject::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        return sizeof(JavascriptStringObject) + (this->value != nullptr ? this->value->ComputeAllocTracingInfo(mflag) : 0);
+    }
+#endif
 } // namespace Js

@@ -68,8 +68,10 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSnapTypes.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSnapValues.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSupport.cpp" />
+    <ClCompile Include="AllocTracing.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AllocTracing.h" />
     <ClInclude Include="DebugContext.h" />
     <ClInclude Include="BreakpointProbe.h" />
     <ClInclude Include="DebugDocument.h" />

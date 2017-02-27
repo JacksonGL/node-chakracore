@@ -455,4 +455,16 @@ namespace Js
         return res;
     }
 #endif
+
+#if ENABLE_ALLOC_TRACING
+    size_t JavascriptMap::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        if(this->map->Count() <= 4)
+        {
+            mflag |= AllocTracing::MemoryAllocWarningFlag::LowDataContentContainerObject;
+        }
+
+        return sizeof(JavascriptMap) + (this->map->Count() * 2 * sizeof(Var));
+    }
+#endif
 }

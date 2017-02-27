@@ -91,6 +91,10 @@ namespace Js
         virtual Js::PropertyId TryGetAssociatedPropertyId() const { return Js::PropertyIds::_none; }
 #endif
 
+#if ENABLE_ALLOC_TRACING
+        virtual size_t ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const override;
+#endif
+
     public:
         template <typename StringType>
         void Copy(__out_ecount(bufLen) char16 *const buffer, const charcount_t bufLen);

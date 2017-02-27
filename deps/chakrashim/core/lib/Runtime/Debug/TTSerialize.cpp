@@ -1834,7 +1834,10 @@ namespace TTD
         : m_currLength(0), m_indentSize(0), m_outfile(outfile)
     {
         this->m_buffer = (char*)malloc(TRACE_LOGGER_BUFFER_SIZE);
+        TTDAssert(this->m_buffer != nullptr, "Malloc failure in tracing code.");
+
         this->m_indentBuffer = (char*)malloc(TRACE_LOGGER_INDENT_BUFFER_SIZE);
+        TTDAssert(this->m_indentBuffer != nullptr, "Malloc failure in tracing code.");
 
         memset(this->m_buffer, 0, TRACE_LOGGER_BUFFER_SIZE);
         memset(this->m_indentBuffer, 0, TRACE_LOGGER_INDENT_BUFFER_SIZE);

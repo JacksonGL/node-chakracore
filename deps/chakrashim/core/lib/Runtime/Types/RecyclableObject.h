@@ -404,6 +404,10 @@ namespace Js {
         virtual void ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc);
 #endif
 
+#if ENABLE_ALLOC_TRACING
+        virtual size_t ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const;
+#endif
+
     private:
 
 #if DBG_EXTRAFIELD

@@ -646,6 +646,13 @@ namespace Js
     }
 #endif
 
+#if ENABLE_ALLOC_TRACING
+    size_t ScriptFunction::ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const
+    {
+        return sizeof(ScriptFunction);
+    }
+#endif
+
     AsmJsScriptFunction::AsmJsScriptFunction(FunctionProxy * proxy, ScriptFunctionType* deferredPrototypeType) :
         ScriptFunction(proxy, deferredPrototypeType), m_moduleMemory(nullptr)
     {}

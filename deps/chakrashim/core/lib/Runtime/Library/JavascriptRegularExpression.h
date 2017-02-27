@@ -210,6 +210,10 @@ namespace Js
 
         void SetLastIndexInfo_TTD(CharCount lastIndex, Js::Var lastVar);
 #endif
+
+#if ENABLE_ALLOC_TRACING
+        virtual size_t ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const override;
+#endif
     };
 
 } // namespace Js

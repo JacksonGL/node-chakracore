@@ -984,6 +984,10 @@ public:
         TTD::TTDCreateJsRTContextCallback createJsRTContextCallbackfp, TTD::TTDReleaseJsRTContextCallback releaseJsRTContextCallbackfp, TTD::TTDSetActiveJsRTContext fpSetActiveJsRTContext);
 #endif
 
+#if ENABLE_ALLOC_TRACING
+    AllocTracing::AllocTracer* AllocSiteTracer;
+#endif
+
     BOOL ReserveStaticTypeIds(__in int first, __in int last);
     Js::TypeId ReserveTypeIds(int count);
     Js::TypeId CreateTypeId();

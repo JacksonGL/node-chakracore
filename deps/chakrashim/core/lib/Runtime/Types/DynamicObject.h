@@ -343,5 +343,11 @@ namespace Js
 #endif
 
 #endif
+
+#if ENABLE_ALLOC_TRACING
+        virtual size_t ComputeAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const override;
+
+        size_t ComputeObjPropertyAllocTracingInfo(AllocTracing::MemoryAllocWarningFlag& mflag) const;
+#endif
     };
 } // namespace Js

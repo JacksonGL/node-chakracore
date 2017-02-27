@@ -29,7 +29,7 @@ namespace TTD
         //List containing the "context" information for the objects in this snapshot
         UnorderedArrayList<NSSnapValues::SnapContext, TTD_ARRAY_LIST_SIZE_XSMALL> m_ctxList;
 
-        //List containing all the propertyids for the symbols that are in the threac context symbolRegistrationMap
+        //List containing all the propertyids for the symbols that are in the thread context symbolRegistrationMap
         UnorderedArrayList<Js::PropertyId, TTD_ARRAY_LIST_SIZE_XSMALL> m_tcSymbolRegistrationMapContents;
 
         //The active script context

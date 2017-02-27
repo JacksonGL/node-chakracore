@@ -1,6 +1,6 @@
 -include config.mk
 
-BUILDTYPE ?= Release
+BUILDTYPE ?= Debug
 PYTHON ?= python
 DESTDIR ?=
 SIGN ?=
