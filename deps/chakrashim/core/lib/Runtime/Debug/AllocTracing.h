@@ -148,4 +148,4 @@ namespace AllocTracing
     };
 }
 
-#endif ENABLE_ALLOC_TRACING
+#endif

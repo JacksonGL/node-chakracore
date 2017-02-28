@@ -109,14 +109,14 @@ namespace AllocTracing
     {
         printf("\"site\": { ");
 
-        printf("\"allocationCount\": %zd, ", this->m_allocationCount);
+        printf("\"allocationCount\": %u, ", (uint32)this->m_allocationCount);
 
         size_t liveCount = 0;
         size_t liveSize = 0;
         MemoryAllocWarningFlag dflag = MemoryAllocWarningFlag::None;
         this->ComputeMemoryInfo(liveCount, liveSize, dflag);
 
-        printf("\"liveCount\": %zd, \"liveSize\": %zd", liveCount, liveSize);
+        printf("\"liveCount\": %u, \"liveSize\": %u", (uint32)liveCount, (uint32)liveSize);
         if(dflag != MemoryAllocWarningFlag::None)
         {
             printf(", \"flags\": [ ");
@@ -466,7 +466,8 @@ namespace AllocTracing
                 AllocTracer::PrettyPrintPathEntry(pentry, 1);
             }
         }
-        printf(" ]");
+        printf(" ]\n");
+        fflush(stdout);
     }
 }
 

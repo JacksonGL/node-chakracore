@@ -24,6 +24,7 @@ add_library (Chakra.Runtime.Debug OBJECT
     TTSnapTypes.cpp
     TTSnapValues.cpp
     TTSupport.cpp
+    AllocTracing.cpp
     )
 
 target_include_directories (
