@@ -744,8 +744,9 @@ namespace TTD
         if(ctx->GetConfig()->IsErrorStackTraceEnabled())
         {
             this->EnqueueRootPathObject(_u("_stackTraceAccessor"), ctx->GetLibrary()->GetStackTraceAccessorFunction());
-            this->EnqueueRootPathObject(_u("_throwTypeErrorRestrictedPropertyAccessor"), ctx->GetLibrary()->GetThrowTypeErrorRestrictedPropertyAccessorFunction());
         }
+
+        this->EnqueueRootPathObject(_u("_throwTypeErrorRestrictedPropertyAccessor"), ctx->GetLibrary()->GetThrowTypeErrorRestrictedPropertyAccessorFunction());
 
         if(ctx->GetConfig()->IsES6PromiseEnabled())
         {
@@ -754,6 +755,9 @@ namespace TTD
         }
 
         this->EnqueueRootPathObject(_u("_arrayIteratorPrototype"), ctx->GetLibrary()->GetArrayIteratorPrototype());
+        this->EnqueueRootPathObject(_u("_mapIteratorPrototype"), ctx->GetLibrary()->GetMapIteratorPrototype());
+        this->EnqueueRootPathObject(_u("_setIteratorPrototype"), ctx->GetLibrary()->GetSetIteratorPrototype());
+        this->EnqueueRootPathObject(_u("_stringIteratorPrototype"), ctx->GetLibrary()->GetStringIteratorPrototype());
 
         uint32 counter = 0;
         while(!this->m_worklist.Empty())
