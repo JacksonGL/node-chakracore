@@ -1,4 +1,4 @@
-// Copyright Joyent, Inc. and other Node contributors.
+﻿// Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the
@@ -356,6 +356,18 @@ class Environment {
       kInitTriggerId,
       kUidFieldsCount,
     };
+
+#if ENABLE_TTD_NODE
+    //Work around AsyncHooks id hack
+    v8::Float64Array* uid_fields_ttdRef;
+
+    void AsyncWrapId_TTDRecord() {
+      if (s_doTTRecord || s_doTTReplay) {
+        const int modlength = kUidFieldsCount * sizeof(double);
+        uid_fields_ttdRef->Buffer()->TTDRawBufferModifyNotifySync(0, modlength);
+      }
+    }
+#endif
 
     AsyncHooks() = delete;
 
