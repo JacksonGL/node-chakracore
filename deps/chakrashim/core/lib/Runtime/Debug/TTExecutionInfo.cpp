@@ -417,7 +417,7 @@ namespace TTD
     ExecutionInfoManager::ExecutionInfoManager()
         : m_topLevelCallbackEventTime(-1), m_runningFunctionTimeCtr(0), m_callStack(&HeapAllocator::Instance),
         m_debuggerNotifiedTopLevelBodies(&HeapAllocator::Instance),
-        m_lastReturnLocation(), m_lastExceptionPropagating(false), m_lastExceptionLocation(),
+        m_lastReturnLocation(),
         m_breakOnFirstUserCode(false),
         m_pendingTTDBP(), m_pendingTTDMoveMode(-1), m_activeBPId(-1), m_shouldRemoveWhenDone(false), m_activeTTDBP(),
         m_hitContinueSearchBP(false), m_continueBreakPoint(),
@@ -537,12 +537,6 @@ namespace TTD
             this->m_lastReturnLocation.SetExceptionLocation(this->m_callStack.Last());
         }
 
-        if(!m_lastExceptionPropagating)
-        {
-            this->m_lastExceptionLocation.SetLocationFromFrame(this->m_topLevelCallbackEventTime, this->m_callStack.Last());
-            this->m_lastExceptionPropagating = true;
-        }
-
         this->m_runningFunctionTimeCtr++;
         this->m_callStack.RemoveAtEnd();
 
@@ -551,11 +545,9 @@ namespace TTD
 #endif
     }
 
-    void ExecutionInfoManager::ProcessCatchInfoForLastExecutedStatements()
+    void ExecutionInfoManager::ClearExceptionFrames()
     {
         this->m_lastReturnLocation.Clear();
-
-        this->m_lastExceptionPropagating = false;
     }
 
     void ExecutionInfoManager::SetBreakOnFirstUserCode()
@@ -587,8 +579,7 @@ namespace TTD
 
     void ExecutionInfoManager::SetPendingTTDUnhandledException()
     {
-        this->GetLastExceptionTimeAndPositionForDebugger(this->m_pendingTTDBP);
-        this->m_lastExceptionPropagating = false;
+        this->GetLastExecutedTimeAndPositionForDebugger(this->m_pendingTTDBP);
 
         this->m_pendingTTDMoveMode = 0;
     }
@@ -937,12 +928,6 @@ namespace TTD
         }
     }
 
-    void ExecutionInfoManager::GetLastExceptionTimeAndPositionForDebugger(TTDebuggerSourceLocation& sourceLocation) const
-    {
-        //If no exception then this will also clear sourceLocation
-        sourceLocation.SetLocationCopy(this->m_lastExceptionLocation);
-    }
-
     void ExecutionInfoManager::ResetCallStackForTopLevelCall(int64 topLevelCallbackEventTime)
     {
         TTDAssert(this->m_callStack.Count() == 0, "We should be at the top-level entry!!!");
@@ -951,7 +936,6 @@ namespace TTD
 
         this->m_runningFunctionTimeCtr = 0;
         this->m_lastReturnLocation.Clear();
-        this->m_lastExceptionLocation.Clear();
     }
 
     void ExecutionInfoManager::SetBPInfoForActiveSegmentContinueScan(ThreadContextTTD* ttdThreadContext)

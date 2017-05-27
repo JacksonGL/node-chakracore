@@ -27,6 +27,8 @@ namespace Js
 #if ENABLE_OBJECT_SOURCE_TRACKING
         TTD::InitializeDiagnosticOriginInformation(this->TTDDiagOriginInfo);
 #endif
+
+        DO_REPLAY_ALLOC_TRACE(type->GetScriptContext(), this);
     }
 
     DynamicObject::DynamicObject(DynamicType * type, ScriptContext * scriptContext) :
@@ -44,6 +46,8 @@ namespace Js
 #if ENABLE_OBJECT_SOURCE_TRACKING
         TTD::InitializeDiagnosticOriginInformation(this->TTDDiagOriginInfo);
 #endif
+
+        DO_REPLAY_ALLOC_TRACE(scriptContext, this);
     }
 
     DynamicObject::DynamicObject(DynamicObject * instance) :
@@ -92,6 +96,8 @@ namespace Js
 #if ENABLE_OBJECT_SOURCE_TRACKING
         TTD::InitializeDiagnosticOriginInformation(this->TTDDiagOriginInfo);
 #endif
+
+        DO_REPLAY_ALLOC_TRACE(type->GetScriptContext(), this);
     }
 
     DynamicObject * DynamicObject::New(Recycler * recycler, DynamicType * type)
@@ -395,7 +401,7 @@ namespace Js
 
     BOOL
     DynamicObject::FindNextProperty(BigPropertyIndex& index, JavascriptString** propertyString, PropertyId* propertyId, PropertyAttributes* attributes,
-        DynamicType *typeToEnumerate, EnumeratorFlags flags, ScriptContext * requestContext) const
+        DynamicType *typeToEnumerate, EnumeratorFlags flags, ScriptContext * requestContext, PropertyValueInfo * info)
     {
         if(index == Constants::NoBigSlot)
         {
@@ -418,7 +424,7 @@ namespace Js
         }
         else if(this->GetScriptContext()->ShouldPerformRecordAction())
         {
-            BOOL res = this->GetTypeHandler()->FindNextProperty(requestContext, index, propertyString, propertyId, attributes, this->GetType(), typeToEnumerate, flags);
+            BOOL res = this->GetTypeHandler()->FindNextProperty(requestContext, index, propertyString, propertyId, attributes, this->GetType(), typeToEnumerate, flags, this, info);
 
             PropertyAttributes tmpAttributes = (attributes != nullptr) ? *attributes : PropertyNone;
             this->GetScriptContext()->GetThreadContext()->TTDLog->RecordPropertyEnumEvent(res, *propertyId, tmpAttributes, *propertyString);
@@ -426,10 +432,10 @@ namespace Js
         }
         else
         {
-            return this->GetTypeHandler()->FindNextProperty(requestContext, index, propertyString, propertyId, attributes, this->GetType(), typeToEnumerate, flags);
+            return this->GetTypeHandler()->FindNextProperty(requestContext, index, propertyString, propertyId, attributes, this->GetType(), typeToEnumerate, flags, this, info);
         }
 #else
-        return this->GetTypeHandler()->FindNextProperty(requestContext, index, propertyString, propertyId, attributes, this->GetType(), typeToEnumerate, flags);
+        return this->GetTypeHandler()->FindNextProperty(requestContext, index, propertyString, propertyId, attributes, this->GetType(), typeToEnumerate, flags, this, info);
 #endif
     }
 

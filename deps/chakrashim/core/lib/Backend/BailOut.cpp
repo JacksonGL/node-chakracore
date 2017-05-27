@@ -1050,7 +1050,7 @@ Js::Var BailOutRecord::BailOut(BailOutRecord const * bailOutRecord)
     void * argoutRestoreAddr = nullptr;
 #ifdef _M_IX86
     void * addressOfRetAddress = _AddressOfReturnAddress();
-    if (bailOutRecord->ehBailoutData && (bailOutRecord->ehBailoutData->catchOffset != 0))
+    if (bailOutRecord->ehBailoutData && (bailOutRecord->ehBailoutData->catchOffset != 0 || bailOutRecord->ehBailoutData->finallyOffset != 0 || bailOutRecord->ehBailoutData->ht == Js::HandlerType::HT_Finally))
     {
         // For a bailout in argument evaluation from an EH region, the esp is offset by the TryCatch helper's frame. So, the argouts are not at the offsets
         // stored in the bailout record, which are relative to ebp. Need to restore the argouts from the actual value of esp before calling the Bailout helper
@@ -1547,6 +1547,10 @@ BailOutRecord::BailOutHelper(Js::JavascriptCallStackLayout * layout, Js::ScriptF
 
     newInstance->ehBailoutData = bailOutRecord->ehBailoutData;
     newInstance->OrFlags(Js::InterpreterStackFrameFlags_FromBailOut);
+    if (bailOutKind == IR::BailOutOnArrayAccessHelperCall)
+    {
+        newInstance->OrFlags(Js::InterpreterStackFrameFlags_ProcessingBailOutOnArrayAccessHelperCall);
+    }
 
     ThreadContext *threadContext = newInstance->GetScriptContext()->GetThreadContext();
 
@@ -2708,7 +2712,7 @@ Js::Var BranchBailOutRecord::BailOut(BranchBailOutRecord const * bailOutRecord, 
     void * argoutRestoreAddr = nullptr;
 #ifdef _M_IX86
     void * addressOfRetAddress = _AddressOfReturnAddress();
-    if (bailOutRecord->ehBailoutData && (bailOutRecord->ehBailoutData->catchOffset != 0))
+    if (bailOutRecord->ehBailoutData && (bailOutRecord->ehBailoutData->catchOffset != 0 || bailOutRecord->ehBailoutData->finallyOffset != 0 || bailOutRecord->ehBailoutData->ht == Js::HandlerType::HT_Finally))
     {
         argoutRestoreAddr = (void *)((char*)addressOfRetAddress + ((2 + 1) * MachPtr)); // Account for the parameters and return address of this function
     }

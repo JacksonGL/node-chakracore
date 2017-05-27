@@ -1013,4 +1013,30 @@ typedef unsigned __int32 uint32_t;
             _Inout_ JsTTDMoveMode* moveMode,
             _Out_ int64_t* rootEventTime);
 
+    /// <summary>
+    ///     TTD API -- may change in future versions:
+    ///     Enable allocation recording during replay.
+    /// </summary>
+    CHAKRA_API JsTTDAllocTracingEnable();
+
+    /// <summary>
+    ///     TTD API -- may change in future versions:
+    ///     Stop allocation recording and emit the information to the specified files.
+    /// </summary>
+    /// <param name="allocFile">Fully qualified path to write the alloc site information.</param>
+    /// <param name="allocFileSize">Size of the allocation site file name.</param>
+    /// <param name="heapFile">Fully qualified path to write the snapshot information.</param>
+    /// <param name="heapFileSize">Size of the snapshot site file name.</param>
+    /// <param name="openResourceStream">The <c>TTDOpenResourceStreamCallback</c> function for generating a JsTTDStreamHandle to read/write serialized data.</param>
+    /// <param name="writeBytesToStream">The <c>JsTTDWriteBytesToStreamCallback</c> function for writing bytes to a JsTTDStreamHandle.</param>
+    /// <param name="flushAndCloseStream">The <c>JsTTDFlushAndCloseStreamCallback</c> function for flushing and closing a JsTTDStreamHandle as needed.</param>
+    CHAKRA_API JsTTDAllocTracingCompleteAndEmit(
+        _In_reads_(allocFileSize) char* allocFile,
+        _In_ size_t allocFileSize,
+        _In_reads_(heapFileSize) char* heapFile,
+        _In_ size_t heapFileSize,
+        _In_ TTDOpenResourceStreamCallback openResourceStream,
+        _In_ JsTTDWriteBytesToStreamCallback writeBytesToStream,
+        _In_ JsTTDFlushAndCloseStreamCallback flushAndCloseStream);
+
 #endif // _CHAKRADEBUG_H_

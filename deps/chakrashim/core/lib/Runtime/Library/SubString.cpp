@@ -18,6 +18,8 @@ namespace Js
 #ifdef PROFILE_STRINGS
         StringProfiler::RecordNewString( scriptContext, this->UnsafeGetBuffer(), this->GetLength() );
 #endif
+
+        DO_REPLAY_ALLOC_TRACE(scriptContext, this);
     }
 
     JavascriptString* SubString::New(JavascriptString* string, charcount_t start, charcount_t length)

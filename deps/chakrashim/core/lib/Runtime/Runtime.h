@@ -60,6 +60,14 @@ class JITJavascriptString;
 #include "Debug/TTSupport.h"
 #include "Debug/TTSerialize.h"
 
+#if ENABLE_ALLOC_TRACING
+namespace AllocTracing
+{
+    class AllocDataWriter;
+    class AllocTracer;
+}
+#endif
+
 ////////
 
 namespace Js
@@ -75,7 +83,7 @@ namespace Js
     struct CallInfo;
     struct InlineeCallInfo;
     struct InlineCache;
-    struct PolymorphicInlineCache;
+    class PolymorphicInlineCache;
     struct Arguments;
     class StringDictionaryWrapper;
     struct ByteCodeDumper;
@@ -262,7 +270,7 @@ namespace Js
     // asm.js
     namespace ArrayBufferView
     {
-        enum ViewType: int;
+        enum ViewType: uint8;
     }
     struct EmitExpressionInfo;
     struct AsmJsModuleMemory;
@@ -434,6 +442,7 @@ enum tagDEBUG_EVENT_INFO_TYPE
 #include "Library/JavascriptFunction.h"
 #include "Library/RuntimeFunction.h"
 #include "Library/JavascriptExternalFunction.h"
+#include "Library/CustomExternalIterator.h"
 
 #include "Base/CharStringCache.h"
 
@@ -454,6 +463,7 @@ enum tagDEBUG_EVENT_INFO_TYPE
 #include "Language/JavascriptOperators.h"
 
 #include "Library/WasmLibrary.h"
+#include "Library/WabtInterface.h"
 // xplat-todo: We should get rid of this altogether and move the functionality it
 // encapsulates to the Platform Agnostic Interface
 #ifdef _WIN32
@@ -541,6 +551,11 @@ enum tagDEBUG_EVENT_INFO_TYPE
 #include "Debug/TTEvents.h"
 #include "Debug/TTActionEvents.h"
 #include "Debug/TTEventLog.h"
+
+ #if ENABLE_ALLOC_TRACING
+#include "Debug/TTAllocTracing.h"
+#endif
+
 #endif
 
 #include "../WasmReader/WasmReader.h"

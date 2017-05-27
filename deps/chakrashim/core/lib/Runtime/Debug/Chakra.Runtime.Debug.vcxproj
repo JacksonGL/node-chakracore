@@ -70,6 +70,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSnapTypes.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSnapValues.cpp" />
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSupport.cpp" />
+    <ClCompile Include="TTAllocTracing.cpp" />
     <ClCompile Include="TTExecutionInfo.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -87,6 +88,7 @@
     <ClInclude Include="RuntimeDebugPch.h" />
     <ClInclude Include="SourceContextInfo.h" />
     <ClInclude Include="TTActionEvents.h" />
+    <ClInclude Include="TTAllocTracing.h" />
     <ClInclude Include="TTEventLog.h" />
     <ClInclude Include="TTEvents.h" />
     <ClInclude Include="TTExecutionInfo.h" />

@@ -60,6 +60,7 @@ namespace Js
             WritableString(StaticType * type, charcount_t length, const char16* szValue)
                 : JavascriptString(type, length, szValue)
             {
+                DO_REPLAY_ALLOC_TRACE(type->GetScriptContext(), this);
             }
 
             static char16* SafeCopyAndAdvancePtr(__out_ecount(cchDst) char16* dst, charcount_t& cchDst, __in_ecount(cch) const char16* ptr, charcount_t cch);

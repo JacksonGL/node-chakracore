@@ -25,7 +25,8 @@ namespace Js
         InterpreterStackFrameFlags_WithinCatchBlock = 2,
         InterpreterStackFrameFlags_WithinFinallyBlock = 4,
         InterpreterStackFrameFlags_FromBailOut = 8,
-        InterpreterStackFrameFlags_ProcessingBailOutFromEHCode = 0x10,
+        InterpreterStackFrameFlags_ProcessingBailOutOnArrayAccessHelperCall = 0x10,
+        InterpreterStackFrameFlags_ProcessingBailOutFromEHCode = 0x20,
         InterpreterStackFrameFlags_All = 0xFFFF,
     };
 
@@ -179,6 +180,8 @@ namespace Js
         void OP_I_SetOutAsmSimd(RegSlot outRegisterID, AsmJsSIMDValue val);
         template<bool toJs>
         void OP_InvalidWasmTypeConversion(...);
+        void OP_WasmPrintFunc(int index);
+        template <class T> void OP_WasmPrintFunc(const unaligned T* playout) { OP_WasmPrintFunc((int)playout->I1);  }
 
         void SetOut(ArgSlot outRegisterID, Var bValue);
         void SetOut(ArgSlot_OneByte outRegisterID, Var bValue);
@@ -704,7 +707,7 @@ namespace Js
         void OP_TryCatch(const unaligned OpLayoutBr* playout);
         void ProcessCatch();
         int ProcessFinally();
-        void ProcessTryCatchBailout(EHBailoutData * innermostEHBailoutData, uint32 tryNestingDepth);
+        void ProcessTryHandlerBailout(EHBailoutData * innermostEHBailoutData, uint32 tryNestingDepth);
         void OP_TryFinally(const unaligned OpLayoutBr* playout);
         void OP_TryFinallyWithYield(const byte* ip, Js::JumpOffset jumpOffset, Js::RegSlot regException, Js::RegSlot regOffset);
         void OP_ResumeCatch();
@@ -725,6 +728,7 @@ namespace Js
         template <LayoutSize layoutSize,bool profiled> const byte * OP_ProfiledLoopBodyStart(const byte *ip);
         template <typename T> void OP_ApplyArgs(const unaligned OpLayoutT_Reg5<T> * playout);
         template <class T> void OP_EmitTmpRegCount(const unaligned OpLayoutT_Unsigned1<T> * ip);
+        Var OP_ImportCall(Var specifier, ScriptContext *scriptContext);
 
         HeapArgumentsObject * CreateEmptyHeapArgumentsObject(ScriptContext* scriptContext);
         void TrySetFrameObjectInHeapArgObj(ScriptContext * scriptContext, bool hasNonSimpleParam, bool isScopeObjRestored);

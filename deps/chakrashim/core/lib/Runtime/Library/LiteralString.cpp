@@ -10,6 +10,7 @@ namespace Js
 
     LiteralString::LiteralString(StaticType * type) : JavascriptString(type)
     {
+        DO_REPLAY_ALLOC_TRACE(type->GetScriptContext(), this);
     }
 
     LiteralString::LiteralString(StaticType * type, const char16* content, charcount_t charLength) :
@@ -29,6 +30,8 @@ namespace Js
 #ifdef PROFILE_STRINGS
         StringProfiler::RecordNewString( type->GetScriptContext(), content, charLength );
 #endif
+
+        DO_REPLAY_ALLOC_TRACE(type->GetScriptContext(), this);
     }
 
     LiteralString* LiteralString::New(StaticType* type, const char16* content, charcount_t charLength, Recycler* recycler)

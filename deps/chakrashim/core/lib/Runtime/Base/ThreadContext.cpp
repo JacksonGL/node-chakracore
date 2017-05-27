@@ -200,6 +200,9 @@ ThreadContext::ThreadContext(AllocationPolicyManager * allocationPolicyManager, 
     , TTDExecutionInfo(nullptr)
     , TTDLog(nullptr)
     , TTDRootNestingCount(0)
+#if ENABLE_ALLOC_TRACING
+    , AllocSiteTracer(nullptr)
+#endif
 #endif
 #ifdef ENABLE_DIRECTCALL_TELEMETRY
     , directCallTelemetry(this)
@@ -411,6 +414,14 @@ ThreadContext::~ThreadContext()
         TT_HEAP_DELETE(TTD::EventLog, this->TTDLog);
         this->TTDLog = nullptr;
     }
+
+#if ENABLE_ALLOC_TRACING
+    if(this->AllocSiteTracer != nullptr)
+    {
+        HeapDelete(this->AllocSiteTracer);
+        this->AllocSiteTracer = nullptr;
+    }
+#endif
 #endif
 
 #ifdef LEAK_REPORT
@@ -2073,7 +2084,7 @@ ThreadContext::ExecuteRecyclerCollectionFunction(Recycler * recycler, Collection
     }
 
     // Take etw rundown lock on this thread context. We can't collect entryPoints if we are in etw rundown.
-    AutoCriticalSection autocs(this->GetEtwRundownCriticalSection());
+    AutoCriticalSection autocs(this->GetFunctionBodyLock());
 
     // Disable calling dispose from leave script or the stack probe
     // while we're executing the recycler wrapper
@@ -2244,25 +2255,16 @@ Js::TypeId ThreadContext::CreateTypeId()
     return nextTypeId = (Js::TypeId)(nextTypeId + 1);
 }
 
-WellKnownHostType ThreadContext::GetWellKnownHostType(Js::TypeId typeId)
-{
-    if (this->wellKnownHostTypeHTMLAllCollectionTypeId == typeId)
-    {
-        return WellKnownHostType_HTMLAllCollection;
-    }
-
-    return WellKnownHostType_Invalid;
-}
-
 void ThreadContext::SetWellKnownHostTypeId(WellKnownHostType wellKnownType, Js::TypeId typeId)
 {
-    AssertMsg(WellKnownHostType_HTMLAllCollection == wellKnownType, "ThreadContext::SetWellKnownHostTypeId called on type other than HTMLAllCollection");
+    AssertMsg(wellKnownType <= WellKnownHostType_Last, "ThreadContext::SetWellKnownHostTypeId called on unknown type");
 
-    if (WellKnownHostType_HTMLAllCollection == wellKnownType)
+    if (wellKnownType <= WellKnownHostType_Last)
     {
-        this->wellKnownHostTypeHTMLAllCollectionTypeId = typeId;
+        this->wellKnownHostTypeIds[wellKnownType] = typeId;
 #if ENABLE_NATIVE_CODEGEN
-        if (this->m_remoteThreadContextInfo)
+        // The jit server really only needs to know about WellKnownHostType_HTMLAllCollection
+        if (this->m_remoteThreadContextInfo && wellKnownType == WellKnownHostType_HTMLAllCollection)
         {
             HRESULT hr = JITManager::GetJITManager()->SetWellKnownHostTypeId(this->m_remoteThreadContextInfo, (int)typeId);
             JITManager::HandleServerCallResult(hr, RemoteCallType::StateUpdate);
@@ -2866,6 +2868,12 @@ ThreadContext::UpdateRedeferralState()
     }
 }
 
+void
+ThreadContext::PreDisposeObjectsCallBack()
+{
+    this->expirableObjectDisposeList->Clear();
+}
+
 #ifdef FAULT_INJECTION
 void
 ThreadContext::DisposeScriptContextByFaultInjectionCallBack()
@@ -3030,8 +3038,6 @@ ThreadContext::UnregisterExpirableObject(ExpirableObject* object)
 {
     Assert(this->expirableObjectList);
     Assert(object->registrationHandle != nullptr);
-    Assert(this->expirableObjectList->HasElement(
-        (ExpirableObject* const *)PointerValue(object->registrationHandle)));
 
     ExpirableObject** registrationData = (ExpirableObject**)PointerValue(object->registrationHandle);
     Assert(*registrationData == object);
@@ -3042,16 +3048,6 @@ ThreadContext::UnregisterExpirableObject(ExpirableObject* object)
     numExpirableObjects--;
 }
 
-void
-ThreadContext::DisposeExpirableObject(ExpirableObject* object)
-{
-    Assert(this->expirableObjectDisposeList);
-    Assert(object->registrationHandle == nullptr);
-
-    this->expirableObjectDisposeList->Remove(object);
-
-    OUTPUT_VERBOSE_TRACE(Js::ExpirableCollectPhase, _u("Disposed 0x%p\n"), object);
-}
 #pragma endregion
 
 void
@@ -4152,11 +4148,10 @@ BOOL ThreadContext::IsNativeAddress(void * pCodeAddr, Js::ScriptContext* current
 #if DBG
         boolean result;
         HRESULT hr = JITManager::GetJITManager()->IsNativeAddr(this->m_remoteThreadContextInfo, (intptr_t)pCodeAddr, &result);
-        JITManager::HandleServerCallResult(hr, RemoteCallType::HeapQuery);
 #endif
         bool isNativeAddr = IsNativeAddressHelper(pCodeAddr, currentScriptContext);
 #if DBG
-        Assert(result == (isNativeAddr? TRUE:FALSE));
+        Assert(FAILED(hr) || result == (isNativeAddr? TRUE:FALSE));
 #endif
         return isNativeAddr;
     }

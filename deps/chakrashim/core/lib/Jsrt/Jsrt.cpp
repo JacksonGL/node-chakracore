@@ -4081,6 +4081,74 @@ CHAKRA_API JsTTDReplayExecution(_Inout_ JsTTDMoveMode* moveMode, _Out_ int64_t* 
 #endif
 }
 
+CHAKRA_API JsTTDAllocTracingEnable()
+{
+#if !ENABLE_TTD || !ENABLE_ALLOC_TRACING
+    return JsErrorCategoryUsage;
+#else
+    JsrtContext *currentContext = JsrtContext::GetCurrent();
+    JsErrorCode cCheck = CheckContext(currentContext, true);
+    TTDAssert(cCheck == JsNoError, "This shouldn't happen!!!");
+
+    Js::ScriptContext* scriptContext = currentContext->GetScriptContext();
+    ThreadContext* threadContext = scriptContext->GetThreadContext();
+    TTDAssert(threadContext->IsRuntimeInTTDMode(), "Should only happen in TT debugging mode.");
+
+    threadContext->AllocSiteTracer = HeapNew(AllocTracing::AllocTracer);
+    return JsNoError;
+#endif
+}
+
+CHAKRA_API JsTTDAllocTracingCompleteAndEmit(_In_reads_(allocFileSize) char* allocFile, _In_ size_t allocFileSize, _In_reads_(heapFileSize) char* heapFile, _In_ size_t heapFileSize,
+    _In_ TTDOpenResourceStreamCallback openResourceStream, _In_ JsTTDWriteBytesToStreamCallback writeBytesToStream, _In_ JsTTDFlushAndCloseStreamCallback flushAndCloseStream)
+{
+#if !ENABLE_TTD || !ENABLE_ALLOC_TRACING
+    return JsErrorCategoryUsage;
+#else
+    JsrtContext *currentContext = JsrtContext::GetCurrent();
+    JsErrorCode cCheck = CheckContext(currentContext, true);
+    TTDAssert(cCheck == JsNoError, "This shouldn't happen!!!");
+
+    Js::ScriptContext* scriptContext = currentContext->GetScriptContext();
+    ThreadContext* threadContext = scriptContext->GetThreadContext();
+    TTDAssert(threadContext->IsRuntimeInTTDMode(), "Should only happen in TT debugging mode.");
+
+    if(threadContext->AllocSiteTracer == nullptr)
+    {
+        return JsErrorCategoryUsage;
+    }
+
+    try
+    {
+        AUTO_NESTED_HANDLED_EXCEPTION_TYPE((ExceptionType)(ExceptionType_OutOfMemory | ExceptionType_JavascriptException));
+
+        // Enter script
+        BEGIN_ENTER_SCRIPT(scriptContext, true, true, true)
+        {
+            threadContext->AllocSiteTracer->ForceAllData();
+
+            //Do a GC to ensure all the collectable object have been collected
+            threadContext->GetRecycler()->CollectNow<CollectNowForceInThread>();
+
+            AllocTracing::AllocDataWriter writer;
+            threadContext->AllocSiteTracer->JSONWriteData(writer);
+
+            //
+            //TODO: Take a new snapshot and emit it here!!!
+            //
+        }
+        END_ENTER_SCRIPT
+    }
+    catch(...)
+    {
+        TTDAssert(false, "Encountered some kind of exception in post-process of alloc tracing??");
+        return JsErrorCategoryFatal;
+    }
+
+    return JsNoError;
+#endif
+}
+
 #ifdef CHAKRACOREBUILD_
 
 template <class SrcChar, class DstChar>
