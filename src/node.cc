@@ -1,4 +1,4 @@
-// Copyright Joyent, Inc. and other Node contributors.
+﻿// Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the
@@ -119,6 +119,7 @@ extern char **environ;
 #if ENABLE_TTD_NODE
 bool s_doTTRecord = false;
 bool s_doTTReplay = false;
+bool s_doAllocTracing = false;
 bool s_doTTDebug = false;
 size_t s_ttoptReplayUriLength = 0;
 const char* s_ttoptReplayUri = NULL;
@@ -3934,6 +3935,8 @@ static void ParseArgs(int* argc,
           s_doTTDebug = true;
           s_ttoptReplayUri = arg + strlen("--replay-debug=");
           s_ttoptReplayUriLength = strlen(s_ttoptReplayUri);
+      } else if(strcmp(arg, "--alloc-trace") == 0) {
+          s_doAllocTracing = true;
       } else if (strcmp(arg, "--break-first") == 0) {
           s_ttdStartupMode = (0x100 | 0x1);
           debug_options.do_wait_for_connect();
@@ -4787,6 +4790,10 @@ inline int Start_TTDReplay(Isolate* isolate, void* isolate_context,
   int64_t nextEventTime = -2;
   bool continueReplayActions = true;
 
+  if(s_doAllocTracing) {
+    JsTTDAllocTracingEnable();
+  }
+
   while (continueReplayActions) {
     continueReplayActions = v8::Isolate::RunSingleStepOfReverseMoveLoop(
         isolate,
@@ -4795,6 +4802,13 @@ inline int Start_TTDReplay(Isolate* isolate, void* isolate_context,
 
     // don't continue replay actions if we are not in debug mode
     continueReplayActions &= s_doTTDebug;
+  }
+
+  if(s_doAllocTracing) {
+    //
+    //TODO: we need to wire in the IO more gracefully!!!
+    //
+    JsTTDAllocTracingCompleteAndEmit(nullptr, 0, nullptr, 0, nullptr, nullptr, nullptr);
   }
 
   JsTTDStop();

@@ -1,4 +1,4 @@
-// Copyright Joyent, Inc. and other Node contributors.
+﻿// Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the
@@ -106,6 +106,7 @@ struct uv_loop_s;
 extern bool s_doTTRecord;
 extern bool s_doTTReplay;
 extern bool s_doTTDebug;
+extern bool s_doAllocTracing;
 #endif
 
 // Forward-declare these functions now to stop MSVS from becoming
