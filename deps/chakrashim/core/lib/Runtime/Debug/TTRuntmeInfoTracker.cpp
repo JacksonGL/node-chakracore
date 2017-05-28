@@ -13,12 +13,20 @@ namespace TTD
         ////
         //First just setup the standard things needed for a script context
         ctx->TTDHostCallbackFunctor = callbackFunctor;
-        if(noNative)
+        if(noNative
+#if ENABLE_ALLOC_TRACING
+            || ctx->GetThreadContext()->AllocSiteTracer != nullptr
+#endif
+            )
         {
             ctx->ForceNoNative();
         }
 
-        if(debugMode)
+        if(debugMode 
+#if ENABLE_ALLOC_TRACING
+            || ctx->GetThreadContext()->AllocSiteTracer != nullptr
+#endif
+            )
         {
 #ifdef _WIN32
             ctx->InitializeDebugging();

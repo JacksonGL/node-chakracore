@@ -4094,7 +4094,18 @@ CHAKRA_API JsTTDAllocTracingEnable()
     ThreadContext* threadContext = scriptContext->GetThreadContext();
     TTDAssert(threadContext->IsRuntimeInTTDMode(), "Should only happen in TT debugging mode.");
 
-    threadContext->AllocSiteTracer = HeapNew(AllocTracing::AllocTracer);
+    try
+    {
+        AUTO_NESTED_HANDLED_EXCEPTION_TYPE((ExceptionType)(ExceptionType_OutOfMemory | ExceptionType_JavascriptException));
+
+        threadContext->AllocSiteTracer = HeapNew(AllocTracing::AllocTracer);
+    }
+    catch(...)
+    {
+        //Encountered OOM in alloc tracing initialization
+        return JsErrorCategoryFatal;
+    }
+
     return JsNoError;
 #endif
 }

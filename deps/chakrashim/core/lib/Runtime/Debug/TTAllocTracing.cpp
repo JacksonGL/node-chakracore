@@ -42,7 +42,7 @@ namespace AllocTracing
     void AllocDataWriter::WriteObjectId(Js::RecyclableObject* value)
     {
         char trgtBuff[64];
-        int writtenChars = sprintf_s(trgtBuff, "*%I64u", reinterpret_cast<uint64>(value));
+        int writtenChars = sprintf_s(trgtBuff, "\"*%I64u\"", reinterpret_cast<uint64>(value));
         TTDAssert(writtenChars != -1 && writtenChars < 64, "Formatting failed or result is too big.");
 
         this->WriteChars_Internal(trgtBuff, writtenChars);
@@ -78,24 +78,24 @@ namespace AllocTracing
         ;
     }
 
-    bool SourceLocation::IsInternalLocation() const
-    {
-        return (this->m_function == nullptr);
-    }
-
     bool SourceLocation::SameAsOtherLocation(const Js::FunctionBody* function, uint32 line, uint32 column) const
     {
-        return (this->m_function == function) & (this->m_line == line) & (this->m_column == column);
+        if((this->m_line != line) | (this->m_column != column))
+        {
+            return false;
+        }
+
+        return (wcscmp(this->m_function->GetSourceContextInfo()->url, function->GetSourceContextInfo()->url) == 0);
     }
 
     void SourceLocation::JSONWriteLocationData(AllocDataWriter& writer) const
     {
-        writer.WriteLiteralString("src: { ");
-        writer.WriteLiteralString("file: '");
+        writer.WriteLiteralString("\"src\": { ");
+        writer.WriteLiteralString("\"function\": \"");
         writer.WriteString(this->m_function->GetDisplayName(), this->m_function->GetDisplayNameLength());
-        writer.WriteLiteralString("', line: ");
+        writer.WriteLiteralString("\", \"line\": ");
         writer.WriteInt(this->m_line + 1);
-        writer.WriteLiteralString(", column: ");
+        writer.WriteLiteralString(", \"column\": ");
         writer.WriteInt(this->m_column);
         writer.WriteLiteralString(" }");
     }
@@ -162,7 +162,7 @@ namespace AllocTracing
     void AllocSiteStats::JSONWriteSiteData(AllocDataWriter& writer) const
     {
         bool first = true;
-        writer.WriteLiteralString("objectIds: [ ");
+        writer.WriteLiteralString("\"objectIds\": [ ");
         this->m_allocationLiveSet->Map([&](Js::RecyclableObject* key, bool, const RecyclerWeakReference<Js::RecyclableObject>*)
         {
             if(!first)
@@ -173,6 +173,17 @@ namespace AllocTracing
             writer.WriteObjectId(key);
         });
         writer.WriteChar(' ]');
+    }
+
+    bool AllocTracer::IsInternalLocation(const AllocCallStackEntry& callEntry)
+    {
+        if(callEntry.Function->GetSourceContextInfo() == nullptr || callEntry.Function->GetSourceContextInfo()->url == nullptr)
+        {
+            return true;
+        }
+
+        const char16* url = callEntry.Function->GetSourceContextInfo()->url;
+        return (wcslen(url) <= 1 || (url[0] != _u('\\') && url[1] != _u(':')));
     }
 
     void AllocTracer::ExtractLineColumn(const AllocCallStackEntry& sentry, uint32* line, uint32* column)
@@ -247,11 +258,6 @@ namespace AllocTracing
         }
 
         HeapDelete(entry);
-    }
-
-    bool AllocTracer::IsPathInternalCode(const AllocPathEntry* root)
-    {
-        return root->Location->IsInternalLocation();
     }
 
     AllocTracer::AllocPathEntry* AllocTracer::ExtendPathTreeForAllocation(const JsUtil::List<AllocCallStackEntry, HeapAllocator>& callStack, int32 position, CallerPathList* currentPaths, ThreadContext* threadContext)
@@ -395,9 +401,9 @@ namespace AllocTracing
         writer.WriteLiteralString(",\n");
 
         AllocTracer::JSONWriteDataIndent(writer, localdepth);
-        writer.WriteLiteralString("allocInfo: { Count: ");
+        writer.WriteLiteralString("\"allocInfo\": { \"count\": ");
         writer.WriteInt(root->LiveCount);
-        writer.WriteLiteralString(", estimatedSize: ");
+        writer.WriteLiteralString(", \"estimatedSize\": ");
         writer.WriteInt(root->LiveSizeEstimate);
         writer.WriteLiteralString(" },\n");
 
@@ -408,8 +414,7 @@ namespace AllocTracing
         }
         else
         {
-            AllocTracer::JSONWriteDataIndent(writer, localdepth);
-            writer.WriteChar('[');
+            writer.WriteLiteralString("\"subPaths\": [");
 
             bool first = true;
             uint32 nesteddepth = localdepth + 1;
@@ -418,7 +423,7 @@ namespace AllocTracing
                 AllocPathEntry* cpe = root->CallerPaths->Item(i);
                 if(cpe->IsInterestingSite)
                 {
-                    if(first)
+                    if(!first)
                     {
                         writer.WriteChar(',');
                     }
@@ -439,7 +444,7 @@ namespace AllocTracing
     }
 
     AllocTracer::AllocTracer()
-        : m_callStack(&HeapAllocator::Instance), m_allocPathRoots(&HeapAllocator::Instance)
+        : m_callStack(&HeapAllocator::Instance), m_prunedCallStack(&HeapAllocator::Instance), m_allocPathRoots(&HeapAllocator::Instance)
     {
         ;
     }
@@ -475,16 +480,27 @@ namespace AllocTracing
 
     void AllocTracer::AddAllocation(Js::RecyclableObject* obj)
     {
+        for(int32 i = 0; i < this->m_callStack.Count(); ++i)
+        {
+            const AllocCallStackEntry& ase = this->m_callStack.Item(i);
+            if(!AllocTracer::IsInternalLocation(ase))
+            {
+                this->m_prunedCallStack.Add(ase);
+            }
+        }
+
         //For now we skip Host driven allocations
-        if(this->m_callStack.Count() == 0)
+        if(this->m_prunedCallStack.Count() == 0)
         {
             return;
         }
 
-        AllocPathEntry* tentry = AllocTracer::ExtendPathTreeForAllocation(this->m_callStack, this->m_callStack.Count() - 1, &this->m_allocPathRoots, obj->GetScriptContext()->GetThreadContext());
+        AllocPathEntry* tentry = AllocTracer::ExtendPathTreeForAllocation(this->m_prunedCallStack, this->m_prunedCallStack.Count() - 1, &this->m_allocPathRoots, obj->GetScriptContext()->GetThreadContext());
         AssertMsg(tentry->IsTerminalStatsEntry, "Something went wrong in the tree expansion");
 
         tentry->TerminalStats->AddAllocation(obj);
+
+        this->m_prunedCallStack.Clear();
     }
 
     void AllocTracer::ForceAllData()
@@ -524,7 +540,7 @@ namespace AllocTracing
             AllocPathEntry* cpe = this->m_allocPathRoots.Item(i);
             if(cpe->IsInterestingSite)
             {
-                if(first)
+                if(!first)
                 {
                     writer.WriteChar(',');
                 }
