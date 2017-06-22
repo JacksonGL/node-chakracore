@@ -761,6 +761,7 @@ typedef unsigned __int32 uint32_t;
             _In_ bool enableDebugging,
             _In_ TTDOpenResourceStreamCallback openResourceStream,
             _In_ JsTTDReadBytesFromStreamCallback readBytesFromStream,
+			_In_ JsTTDWriteBytesToStreamCallback writeBytesToStream,
             _In_ JsTTDFlushAndCloseStreamCallback flushAndCloseStream,
             _In_opt_ JsThreadServiceCallback threadService,
             _Out_ JsRuntimeHandle *runtime);

@@ -271,6 +271,7 @@ IsolateShim::~IsolateShim() {
                                        doDebug, 
                                        &TTCreateStreamCallback,
                                        &TTReadBytesFromStreamCallback,
+									   &TTWriteBytesToStreamCallback,
                                        &TTFlushAndCloseStreamCallback,
                                        nullptr, &runtime);
     }
