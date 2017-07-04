@@ -2532,7 +2532,7 @@ class V8_EXPORT Isolate {
 
   static Isolate* NewWithTTDSupport(const CreateParams& params,
                                     size_t optReplayUriLength, const char* optReplayUri,
-                                    bool doRecord, bool doReplay, bool doDebug,
+                                    bool doRecord, bool doReplay, bool doDebug, bool doAllocTrace,
                                     uint32_t snapInterval,
                                     uint32_t snapHistoryLength);
   static Isolate* New(const CreateParams& params);

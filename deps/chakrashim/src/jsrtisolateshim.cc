@@ -247,7 +247,7 @@ IsolateShim::~IsolateShim() {
 }
 
 /* static */ v8::Isolate * IsolateShim::New(size_t optReplayUriLength, const char* optReplayUri,
-    bool doRecord, bool doReplay, bool doDebug,
+    bool doRecord, bool doReplay, bool doDebug, bool doAllocTrace,
     uint32_t snapInterval, uint32_t snapHistoryLength) {
   bool disableIdleGc = v8::g_disableIdleGc;
     JsRuntimeAttributes attributes = static_cast<JsRuntimeAttributes>(
@@ -262,6 +262,7 @@ IsolateShim::~IsolateShim() {
   } else {
     if (doRecord) {
       error = JsTTDCreateRecordRuntime(attributes, snapInterval, snapHistoryLength,
+		                               doAllocTrace,
                                        &TTCreateStreamCallback,
                                        &TTWriteBytesToStreamCallback,
                                        &TTFlushAndCloseStreamCallback,
@@ -269,6 +270,7 @@ IsolateShim::~IsolateShim() {
     } else {
       error = JsTTDCreateReplayRuntime(attributes, optReplayUri, optReplayUriLength,
                                        doDebug, 
+		                               doAllocTrace,
                                        &TTCreateStreamCallback,
                                        &TTReadBytesFromStreamCallback,
 									   &TTWriteBytesToStreamCallback,

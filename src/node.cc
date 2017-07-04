@@ -4618,6 +4618,9 @@ inline int Start(Isolate* isolate, void* isolate_context,
     fprintf(stderr, "Recording started (after main module loaded)...\n");
     JsTTDStart();
   }
+  if (s_doAllocTracing) {
+	  JsTTDAllocTracingEnable();
+  }
 #endif
 
   env.set_trace_sync_io(trace_sync_io);
@@ -4683,7 +4686,8 @@ inline int Start(uv_loop_t* event_loop,
   Isolate* const isolate = Isolate::NewWithTTDSupport(params,
                                                       0, nullptr,
                                                       s_doTTRecord,
-                                                      false, false,
+                                                      false, false, 
+	                                                  s_doAllocTracing,
                                                       s_ttdSnapInterval,
                                                       s_ttdSnapHistoryLength);
 #else
@@ -4832,7 +4836,7 @@ inline int Start_TTDReplay(uv_loop_t* event_loop,
   Isolate* const isolate = Isolate::NewWithTTDSupport(params,
                                                       s_ttoptReplayUriLength,
                                                       s_ttoptReplayUri,
-                                                      false, true, s_doTTDebug,
+                                                      false, true, s_doTTDebug, s_doAllocTracing,
                                                       UINT32_MAX, UINT32_MAX);
 
   if (isolate == nullptr)
