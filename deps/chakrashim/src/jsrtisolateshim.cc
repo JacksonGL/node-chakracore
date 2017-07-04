@@ -262,7 +262,7 @@ IsolateShim::~IsolateShim() {
   } else {
     if (doRecord) {
       error = JsTTDCreateRecordRuntime(attributes, snapInterval, snapHistoryLength,
-		                               doAllocTrace,
+                                       doAllocTrace,
                                        &TTCreateStreamCallback,
                                        &TTWriteBytesToStreamCallback,
                                        &TTFlushAndCloseStreamCallback,
@@ -270,10 +270,10 @@ IsolateShim::~IsolateShim() {
     } else {
       error = JsTTDCreateReplayRuntime(attributes, optReplayUri, optReplayUriLength,
                                        doDebug, 
-		                               doAllocTrace,
+                                       doAllocTrace,
                                        &TTCreateStreamCallback,
                                        &TTReadBytesFromStreamCallback,
-									   &TTWriteBytesToStreamCallback,
+                                       &TTWriteBytesToStreamCallback,
                                        &TTFlushAndCloseStreamCallback,
                                        nullptr, &runtime);
     }
