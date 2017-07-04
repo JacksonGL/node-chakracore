@@ -729,6 +729,7 @@ typedef unsigned __int32 uint32_t;
             _In_ JsRuntimeAttributes attributes,
             _In_ size_t snapInterval,
             _In_ size_t snapHistoryLength,
+            _In_ bool enableAllocTracing,
             _In_ TTDOpenResourceStreamCallback openResourceStream,
             _In_ JsTTDWriteBytesToStreamCallback writeBytesToStream,
             _In_ JsTTDFlushAndCloseStreamCallback flushAndCloseStream,
