@@ -4619,7 +4619,7 @@ inline int Start(Isolate* isolate, void* isolate_context,
     JsTTDStart();
   }
   if (s_doAllocTracing) {
-	  JsTTDAllocTracingEnable();
+      JsTTDAllocTracingEnable();
   }
 #endif
 
@@ -4687,7 +4687,7 @@ inline int Start(uv_loop_t* event_loop,
                                                       0, nullptr,
                                                       s_doTTRecord,
                                                       false, false, 
-	                                                  s_doAllocTracing,
+                                                      s_doAllocTracing,
                                                       s_ttdSnapInterval,
                                                       s_ttdSnapHistoryLength);
 #else
