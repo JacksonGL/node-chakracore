@@ -417,7 +417,7 @@ namespace TTD
     ExecutionInfoManager::ExecutionInfoManager()
         : m_topLevelCallbackEventTime(-1), m_runningFunctionTimeCtr(0), m_callStack(&HeapAllocator::Instance),
         m_debuggerNotifiedTopLevelBodies(&HeapAllocator::Instance),
-        m_lastReturnLocation(),
+        m_lastReturnLocation(), m_lastExceptionPropagating(false), m_lastExceptionLocation(),
         m_breakOnFirstUserCode(false),
         m_pendingTTDBP(), m_pendingTTDMoveMode(-1), m_activeBPId(-1), m_shouldRemoveWhenDone(false), m_activeTTDBP(),
         m_hitContinueSearchBP(false), m_continueBreakPoint(),
@@ -537,6 +537,12 @@ namespace TTD
             this->m_lastReturnLocation.SetExceptionLocation(this->m_callStack.Last());
         }
 
+        if(!m_lastExceptionPropagating)
+        {
+            this->m_lastExceptionLocation.SetLocationFromFrame(this->m_topLevelCallbackEventTime, this->m_callStack.Last());
+            this->m_lastExceptionPropagating = true;
+        }
+
         this->m_runningFunctionTimeCtr++;
         this->m_callStack.RemoveAtEnd();
 
@@ -545,9 +551,11 @@ namespace TTD
 #endif
     }
 
-    void ExecutionInfoManager::ClearExceptionFrames()
+    void ExecutionInfoManager::ProcessCatchInfoForLastExecutedStatements()
     {
         this->m_lastReturnLocation.Clear();
+
+        this->m_lastExceptionPropagating = false;
     }
 
     void ExecutionInfoManager::SetBreakOnFirstUserCode()
@@ -579,7 +587,8 @@ namespace TTD
 
     void ExecutionInfoManager::SetPendingTTDUnhandledException()
     {
-        this->GetLastExecutedTimeAndPositionForDebugger(this->m_pendingTTDBP);
+        this->GetLastExceptionTimeAndPositionForDebugger(this->m_pendingTTDBP);
+        this->m_lastExceptionPropagating = false;
 
         this->m_pendingTTDMoveMode = 0;
     }
@@ -850,7 +859,17 @@ namespace TTD
         uint32 startOffset = cfinfo.Function->GetStatementStartOffset(cfinfo.CurrentStatementIndex);
         cfinfo.Function->GetSourceLineFromStartOffset_TTD(startOffset, &srcLine, &srcColumn);
 
-        SetDiagnosticOriginInformation(originInfo, srcLine, cfinfo.Function->GetFunctionBody()->GetScriptContext()->GetThreadContext()->TTDLog->GetLastEventTime(), cfinfo.FunctionTime, cfinfo.LoopTime);
+        int64 fileId = 0;
+        if (cfinfo.Function->GetFunctionBody()->GetSourceContextInfo()->url != nullptr)
+        {
+            fileId = AllocTracing::SourceLocation::addSourceItem(
+                cfinfo.Function->GetFunctionBody()->GetSourceContextInfo()->url, 
+                cfinfo.Function->GetFunctionBody()->GetUtf8SourceInfo());
+            srcLine = cfinfo.Function->GetFunctionBody()->GetLineNumber();
+            srcColumn = cfinfo.Function->GetFunctionBody()->GetColumnNumber();
+        }
+
+        SetDiagnosticOriginInformation(originInfo, srcLine, fileId, cfinfo.Function->GetFunctionBody()->GetScriptContext()->GetThreadContext()->TTDLog->GetLastEventTime(), cfinfo.FunctionTime, cfinfo.LoopTime);
     }
 #endif
 
@@ -928,6 +947,12 @@ namespace TTD
         }
     }
 
+    void ExecutionInfoManager::GetLastExceptionTimeAndPositionForDebugger(TTDebuggerSourceLocation& sourceLocation) const
+    {
+        //If no exception then this will also clear sourceLocation
+        sourceLocation.SetLocationCopy(this->m_lastExceptionLocation);
+    }
+
     void ExecutionInfoManager::ResetCallStackForTopLevelCall(int64 topLevelCallbackEventTime)
     {
         TTDAssert(this->m_callStack.Count() == 0, "We should be at the top-level entry!!!");
@@ -936,6 +961,7 @@ namespace TTD
 
         this->m_runningFunctionTimeCtr = 0;
         this->m_lastReturnLocation.Clear();
+        this->m_lastExceptionLocation.Clear();
     }
 
     void ExecutionInfoManager::SetBPInfoForActiveSegmentContinueScan(ThreadContextTTD* ttdThreadContext)

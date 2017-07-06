@@ -488,34 +488,40 @@ namespace Js
     TTD::NSSnapObjects::SnapObjectType JavascriptGeneratorFunction::GetSnapTag_TTD() const
     {
         //we override this with invalid to make sure it isn't unexpectedly handled by the parent class
-        return TTD::NSSnapObjects::SnapObjectType::Invalid;
+        return TTD::NSSnapObjects::SnapObjectType::SnapUnhandledObject;
+        // return TTD::NSSnapObjects::SnapObjectType::Invalid;
     }
 
     void JavascriptGeneratorFunction::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        TTDAssert(false, "Invalid -- JavascriptGeneratorFunction");
+        return;
+        // TTDAssert(false, "Invalid -- JavascriptGeneratorFunction");
     }
 
     TTD::NSSnapObjects::SnapObjectType JavascriptAsyncFunction::GetSnapTag_TTD() const
     {
+        return TTD::NSSnapObjects::SnapObjectType::SnapUnhandledObject;
         //we override this with invalid to make sure it isn't unexpectedly handled by the parent class
-        return TTD::NSSnapObjects::SnapObjectType::Invalid;
+        // return TTD::NSSnapObjects::SnapObjectType::Invalid;
     }
 
     void JavascriptAsyncFunction::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        TTDAssert(false, "Invalid -- JavascriptGeneratorFunction");
+        return;
+        //TTDAssert(false, "Invalid -- JavascriptGeneratorFunction");
     }
 
     TTD::NSSnapObjects::SnapObjectType GeneratorVirtualScriptFunction::GetSnapTag_TTD() const
     {
+        return TTD::NSSnapObjects::SnapObjectType::SnapExternalObject;
         //we override this with invalid to make sure it isn't unexpectedly handled by the parent class
-        return TTD::NSSnapObjects::SnapObjectType::Invalid;
+        // return TTD::NSSnapObjects::SnapObjectType::Invalid;
     }
 
     void GeneratorVirtualScriptFunction::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        TTDAssert(false, "Invalid -- GeneratorVirtualScriptFunction");
+        return;
+        //TTDAssert(false, "Invalid -- GeneratorVirtualScriptFunction");
     }
 #endif
 }

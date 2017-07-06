@@ -72,6 +72,7 @@
     <ClCompile Include="$(MSBuildThisFileDirectory)TTSupport.cpp" />
     <ClCompile Include="TTAllocTracing.cpp" />
     <ClCompile Include="TTExecutionInfo.cpp" />
+    <ClCompile Include="TTMemAnalysis.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DebugContext.h" />
@@ -83,6 +84,8 @@
     <ClInclude Include="DiagObjectModel.h" />
     <ClInclude Include="DiagProbe.h" />
     <ClInclude Include="DiagStackFrame.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="TTMemAnalysis.h" />
     <ClInclude Include="MutationBreakpoint.h" />
     <ClInclude Include="ProbeContainer.h" />
     <ClInclude Include="RuntimeDebugPch.h" />
@@ -107,6 +110,9 @@
     <ProjectReference Include="..\..\JITIDL\Chakra.JITIDL.vcxproj">
       <Project>{0db5ecbc-9385-4a65-be2c-4ef7c65cb719}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Chakra.Runtime.Debug.rc" />
   </ItemGroup>
   <Import Project="$(BuildConfigPropsPath)Chakra.Build.targets" Condition="exists('$(BuildConfigPropsPath)Chakra.Build.targets')" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

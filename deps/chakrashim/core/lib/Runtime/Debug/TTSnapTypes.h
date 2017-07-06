@@ -31,6 +31,7 @@ namespace TTD
 
         //serialize the record data
         void EmitPropertyRecordAsSnapPropertyRecord(const Js::PropertyRecord* pRecord, FileWriter* writer, NSTokens::Separator separator);
+        void EmitPropertyRecordAsSnapPropertyRecordTrimed(const Js::PropertyRecord* pRecord, FileWriter* writer, NSTokens::Separator separator);
         void EmitSnapPropertyRecord(const SnapPropertyRecord* sRecord, FileWriter* writer, NSTokens::Separator separator);
 
         //de-serialize the data
@@ -97,6 +98,9 @@ namespace TTD
         //serialize the record data
         void EmitSnapHandler(const SnapHandler* snapHandler, FileWriter* writer, NSTokens::Separator separator);
 
+        //serialize the record data
+        void EmitSnapHandlerTrimed(const SnapHandler* snapHandler, FileWriter* writer, NSTokens::Separator separator);
+
         //de-serialize the data
         void ParseSnapHandler(SnapHandler* snapHandler, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
@@ -131,6 +135,7 @@ namespace TTD
 
         //serialize the record data
         void EmitSnapType(const SnapType* sType, FileWriter* writer, NSTokens::Separator separator);
+        void EmitSnapTypeTrimed(const SnapType* sType, FileWriter* writer, NSTokens::Separator separator);
 
         //de-serialize the data
         void ParseSnapType(SnapType* sType, bool readSeperator, FileReader* reader, SlabAllocator& alloc, const TTDIdentifierDictionary<TTD_PTR_ID, SnapHandler*>& typeHandlerMap);

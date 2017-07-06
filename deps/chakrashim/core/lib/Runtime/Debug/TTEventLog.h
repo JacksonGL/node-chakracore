@@ -600,6 +600,7 @@ namespace TTD
         //Emit code and support
 
         void EmitLog(const char* emitUri, size_t emitUriLength);
+        void EventLog::ExtractAndDumpSnapshotToJSON(const char* emitUri, size_t emitUriLength);
         void ParseLogInto(TTDataIOInfo& iofp, const char* parseUri, size_t parseUriLength);
     };
 

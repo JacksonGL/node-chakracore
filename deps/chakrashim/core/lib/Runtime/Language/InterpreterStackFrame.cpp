@@ -942,7 +942,7 @@
 //TODO: can probably combine all of this for a fast check InReplay and then a slow check inside (InDebug || Alloc)
 
 #if ENABLE_ALLOC_TRACING
-#define SHOULD_DO_TTD_ALLOC_TRACING(CTX) ((CTX)->ShouldPerformReplayAction() & ((CTX)->GetThreadContext()->AllocSiteTracer != nullptr))
+#define SHOULD_DO_TTD_ALLOC_TRACING(CTX) (/* (CTX)->ShouldPerformReplayAction() & */ ((CTX)->GetThreadContext()->AllocSiteTracer != nullptr))
 #else
 #define SHOULD_DO_TTD_ALLOC_TRACING(CTX) false
 #endif
@@ -6663,7 +6663,7 @@ const byte * InterpreterStackFrame::OP_ProfiledLoopBodyStart(const byte * ip)
         //Clear any previous Exception Info
         if(SHOULD_DO_TTD_STACK_STMT_OP(this->scriptContext))
         {
-            this->scriptContext->GetThreadContext()->TTDExecutionInfo->ClearExceptionFrames();
+            this->scriptContext->GetThreadContext()->TTDExecutionInfo->ProcessCatchInfoForLastExecutedStatements();
         }
 #endif
 

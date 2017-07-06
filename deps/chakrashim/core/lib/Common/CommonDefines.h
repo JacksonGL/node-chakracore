@@ -408,7 +408,7 @@
 #if ENABLE_DEBUG_CONFIG_OPTIONS
 #define ENABLE_TTD_INTERNAL_DIAGNOSTICS 1
 #else
-#define ENABLE_TTD_INTERNAL_DIAGNOSTICS 0
+#define ENABLE_TTD_INTERNAL_DIAGNOSTICS 1 // turn on for dumping heap snapshot in JSON
 #endif
 
 #define TTD_LOG_READER TextFormatReader

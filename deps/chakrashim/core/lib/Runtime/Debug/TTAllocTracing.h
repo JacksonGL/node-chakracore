@@ -6,7 +6,7 @@
 
 #if ENABLE_ALLOC_TRACING
 #define DO_REPLAY_ALLOC_TRACE(CTX, ALLOC) \
-if((CTX)->ShouldPerformReplayAction() && (CTX)->GetThreadContext()->AllocSiteTracer != nullptr) \
+if(/* (CTX)->ShouldPerformReplayAction() && */ (CTX)->GetThreadContext()->AllocSiteTracer != nullptr) \
 {\
     (CTX)->GetThreadContext()->AllocSiteTracer->AddAllocation(ALLOC);\
 }
@@ -20,8 +20,8 @@ if((CTX)->ShouldPerformReplayAction() && (CTX)->GetThreadContext()->AllocSiteTra
 #define ALLOC_TRACING_DYNAMIC_SIZE_DEFAULT 32
 #define ALLOC_TRACING_DYNAMIC_ENTRY_SIZE sizeof(Js::Var)
 
-#define ALLOC_TRACING_INTERESTING_LOCATION_COUNT_THRESHOLD 0.01
-#define ALLOC_TRACING_INTERESTING_LOCATION_SIZE_THRESHOLD 0.01
+#define ALLOC_TRACING_INTERESTING_LOCATION_COUNT_THRESHOLD 0.000
+#define ALLOC_TRACING_INTERESTING_LOCATION_SIZE_THRESHOLD 0.000
 
 namespace AllocTracing
 {
@@ -46,6 +46,17 @@ namespace AllocTracing
 
     typedef JsUtil::WeaklyReferencedKeyDictionary<Js::RecyclableObject, bool, RecyclerPointerComparer<const Js::RecyclableObject*>> AllocPinSet;
 
+    // a class that represents a filename to source pair
+    class FileSourceEntry
+    {
+    public:
+        FileSourceEntry();
+        FileSourceEntry(const char16* filename, Js::Utf8SourceInfo* utf8SourceInfo);
+        // ~FileSourceEntry();
+        const char16* filename;
+        const char16* source;
+    };
+
     //A class that represents a source location -- either an allocation line or a call site in the code
     class SourceLocation
     {
@@ -53,13 +64,20 @@ namespace AllocTracing
         Js::FunctionBody* m_function;
         uint32 m_line;
         uint32 m_column;
-
+        
     public:
+        static JsUtil::List<FileSourceEntry, HeapAllocator> m_file_to_source_list;
+
         SourceLocation(Js::FunctionBody* function, uint32 line, uint32 column);
 
         bool SameAsOtherLocation(const Js::FunctionBody* function, uint32 line, uint32 column) const;
 
         void JSONWriteLocationData(AllocDataWriter& writer) const;
+        void SourceLocation::JSONWriteLocationDataTrimed(TTD::TextFormatWriter& writer) const;
+        
+        static uint32 SourceLocation::addSourceItem(const char16* filename, Js::Utf8SourceInfo* utf8SourceInfo);
+        static void SourceLocation::JSONWriteFileToSourceList(TTD::TextFormatWriter& writer, TTD::NSTokens::Separator sep);
+        static void SourceLocation::clearSourceItems();
     };
 
     //A class associated with a single allocation site that contains the statistics for it -- this holds a weak set of all objects allocated at the site
@@ -80,6 +98,7 @@ namespace AllocTracing
         void EstimateMemoryUseInfo(size_t& liveCount, size_t& liveSize) const;
 
         void JSONWriteSiteData(AllocDataWriter& writer) const;
+        void JSONWriteSiteDataTrimed(TTD::TextFormatWriter& writer) const;
     };
 
     class AllocTracer
@@ -93,13 +112,15 @@ namespace AllocTracing
         };
 
         static bool IsInternalLocation(const AllocCallStackEntry& callEntry);
+        static int count;
 
         JsUtil::List<AllocCallStackEntry, HeapAllocator> m_callStack;
         JsUtil::List<AllocCallStackEntry, HeapAllocator> m_prunedCallStack;
 
         //A struct that represents a Node in our allocation path tree
         struct AllocPathEntry;
-        typedef JsUtil::List<AllocTracer::AllocPathEntry*, HeapAllocator> CallerPathList;
+        // typedef JsUtil::List<AllocTracer::AllocPathEntry*, HeapAllocator> CallerPathList;
+        typedef JsUtil::BaseDictionary<int64, AllocPathEntry*, HeapAllocator, PrimeSizePolicy, DefaultComparer> CallerPathList;
 
         struct AllocPathEntry
         {
@@ -126,7 +147,8 @@ namespace AllocTracing
         static void FreeAllocPathEntry(AllocPathEntry* entry);
 
         //The roots (starting at the line with the allocation) for the caller trees or each allocation
-        JsUtil::List<AllocPathEntry*, HeapAllocator> m_allocPathRoots;
+        // JsUtil::List<AllocPathEntry*, HeapAllocator> m_allocPathRoots;
+        JsUtil::BaseDictionary<int64, AllocPathEntry*, HeapAllocator, PrimeSizePolicy, DefaultComparer> m_allocPathRoots;
 
         static AllocPathEntry* ExtendPathTreeForAllocation(const JsUtil::List<AllocCallStackEntry, HeapAllocator>& callStack, int32 position, CallerPathList* currentPaths, ThreadContext* threadContext);
         static void FreeAllocPathTree(AllocPathEntry* root);
@@ -137,6 +159,7 @@ namespace AllocTracing
 
         static void JSONWriteDataIndent(AllocDataWriter& writer, uint32 depth);
         static void JSONWriteDataPathEntry(AllocDataWriter& writer, const AllocPathEntry* root, uint32 depth);
+        static void JSONWriteDataPathEntryTrimed(TTD::TextFormatWriter& writer, const AllocPathEntry* root, uint32 depth);
 
     public:
         AllocTracer();
@@ -151,6 +174,7 @@ namespace AllocTracing
 
         void ForceAllData();
         void JSONWriteData(AllocDataWriter& writer) const;
+        void AllocTracer::EmitTrimedAllocTrace(int64 snapId, ThreadContext* threadContext) const;
     };
 
     //A class to ensure that even when exceptions are thrown the pop action for the AllocSite call stack is executed

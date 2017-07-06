@@ -66,6 +66,10 @@ namespace TTD
         void EmitSnapshotToFile(FileWriter* writer, ThreadContext* threadContext) const;
         static SnapShot* ParseSnapshotFromFile(FileReader* reader);
 
+        //Emit the json file for the snapshot into the given directory (in JSON format) 
+        // void EmitTrimedSnapshotToFile(FileWriter* writer, ThreadContext* threadContext) const;
+        void EmitTrimedSnapshotToFile(FileWriter* writer, ThreadContext* threadContext) const;
+
         template<typename Fn, typename T, size_t allocSize>
         static void EmitListHelper(Fn emitFunc, const UnorderedArrayList<T, allocSize>& list, FileWriter* snapwriter)
         {
@@ -74,6 +78,21 @@ namespace TTD
             snapwriter->AdjustIndent(1);
             bool firstElement = true;
             for(auto iter = list.GetIterator(); iter.IsValid(); iter.MoveNext())
+            {
+                (*emitFunc)(iter.Current(), snapwriter, firstElement ? NSTokens::Separator::BigSpaceSeparator : NSTokens::Separator::CommaAndBigSpaceSeparator);
+                firstElement = false;
+            }
+            snapwriter->AdjustIndent(-1);
+            snapwriter->WriteSequenceEnd(NSTokens::Separator::BigSpaceSeparator);
+        }
+
+        template<typename Fn, typename T, size_t allocSize>
+        static void EmitListHelperTrimed(NSTokens::Key key, Fn emitFunc, const UnorderedArrayList<T, allocSize>& list, FileWriter* snapwriter)
+        {
+            snapwriter->WriteSequenceStartWithKey(key, NSTokens::Separator::CommaAndBigSpaceSeparator);
+            snapwriter->AdjustIndent(1);
+            bool firstElement = true;
+            for (auto iter = list.GetIterator(); iter.IsValid(); iter.MoveNext())
             {
                 (*emitFunc)(iter.Current(), snapwriter, firstElement ? NSTokens::Separator::BigSpaceSeparator : NSTokens::Separator::CommaAndBigSpaceSeparator);
                 firstElement = false;
@@ -115,6 +134,8 @@ namespace TTD
 
         static void SnapRootPinEntryEmit(const NSSnapValues::SnapRootInfoEntry* spe, FileWriter* snapwriter, NSTokens::Separator separator);
         static void SnapRootPinEntryParse(NSSnapValues::SnapRootInfoEntry* spe, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
+
+        static void SnapRootPinEntryEmitTrimed(const NSSnapValues::SnapRootInfoEntry* spe, FileWriter* snapwriter, NSTokens::Separator separator);
 
     public:
         //Performance counter values
@@ -184,6 +205,9 @@ namespace TTD
 
         //serialize the snapshot data 
         void EmitSnapshot(int64 snapId, ThreadContext* threadContext) const;
+
+        //serialize the trimed snapshot data 
+        void EmitTrimedSnapshot(int64 snapId, ThreadContext* threadContext, const char* emitUri = nullptr, size_t emitUriLength = 0) const;
 
         //de-serialize the snapshot data
         static SnapShot* Parse(int64 snapId, ThreadContext* threadContext);

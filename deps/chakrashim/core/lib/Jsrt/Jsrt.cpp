@@ -17,6 +17,7 @@
 #include "Library/JavascriptPromise.h"
 #include "Base/ThreadContextTlsEntry.h"
 #include "Codex/Utf8Helper.h"
+#include "Debug/TTMemAnalysis.h"
 
 // Parser Includes
 #include "cmperr.h"     // For ERRnoMemory
@@ -156,7 +157,7 @@ JsErrorCode CreateContextCore(_In_ JsRuntimeHandle runtimeHandle, _In_ TTDRecord
         bool doDebug = true;
 #else
         bool noNative = TTD_FORCE_NOJIT_MODE || threadContext->TTDLog->IsDebugModeFlagSet();
-        bool doDebug = TTD_FORCE_DEBUG_MODE || threadContext->TTDLog->IsDebugModeFlagSet();
+        bool doDebug = TTD_FORCE_DEBUG_MODE || threadContext->TTDLog->IsDebugModeFlagSet() || threadContext->doAllocTracing;
 #endif
 
         threadContext->TTDLog->PushMode(TTD::TTDMode::ExcludedExecutionTTAction);
@@ -285,6 +286,8 @@ JsErrorCode CreateRuntimeCore(_In_ JsRuntimeAttributes attributes,
         AllocationPolicyManager * policyManager = HeapNew(AllocationPolicyManager, (attributes & JsRuntimeAttributeDisableBackgroundWork) == 0);
         bool enableExperimentalFeatures = (attributes & JsRuntimeAttributeEnableExperimentalFeatures) != 0;
         ThreadContext * threadContext = HeapNew(ThreadContext, policyManager, threadService, enableExperimentalFeatures);
+
+        threadContext->doAllocTracing = isAllocTrace;
 
         if (((attributes & JsRuntimeAttributeDisableBackgroundWork) != 0)
 #ifdef ENABLE_DEBUG_CONFIG_OPTIONS
@@ -3412,7 +3415,7 @@ CHAKRA_API JsTTDCreateRecordRuntime(_In_ JsRuntimeAttributes attributes, _In_ si
         return JsErrorInvalidArgument;
     }
 
-    return CreateRuntimeCore(attributes, nullptr, 0, true, false, false, enableAllocTracing, (uint32)snapInterval, (uint32)snapHistoryLength,
+    return CreateRuntimeCore(attributes, nullptr, 0, true, false, false, enableAllocTracing,(uint32)snapInterval, (uint32)snapHistoryLength,
         openResourceStream, nullptr, writeBytesToStream, flushAndCloseStream,
         threadService, runtime);
 #endif
@@ -3427,7 +3430,7 @@ CHAKRA_API JsTTDCreateReplayRuntime(_In_ JsRuntimeAttributes attributes, _In_rea
 #else
 
     return CreateRuntimeCore(attributes, infoUri, infoUriCount, false, true, enableDebugging, enableAllocTracing, UINT_MAX, UINT_MAX,
-        openResourceStream, readBytesFromStream, nullptr, flushAndCloseStream,
+        openResourceStream, readBytesFromStream, writeBytesToStream, flushAndCloseStream,
         threadService, runtime);
 #endif
 }
@@ -4089,7 +4092,6 @@ CHAKRA_API JsTTDAllocTracingEnable()
     JsrtContext *currentContext = JsrtContext::GetCurrent();
     JsErrorCode cCheck = CheckContext(currentContext, true);
     TTDAssert(cCheck == JsNoError, "This shouldn't happen!!!");
-
     Js::ScriptContext* scriptContext = currentContext->GetScriptContext();
     ThreadContext* threadContext = scriptContext->GetThreadContext();
     TTDAssert(threadContext->IsRuntimeInTTDMode(), "Should only happen in TT debugging mode.");
@@ -4097,7 +4099,6 @@ CHAKRA_API JsTTDAllocTracingEnable()
     try
     {
         AUTO_NESTED_HANDLED_EXCEPTION_TYPE((ExceptionType)(ExceptionType_OutOfMemory | ExceptionType_JavascriptException));
-
         threadContext->AllocSiteTracer = HeapNew(AllocTracing::AllocTracer);
     }
     catch(...)
@@ -4105,7 +4106,6 @@ CHAKRA_API JsTTDAllocTracingEnable()
         //Encountered OOM in alloc tracing initialization
         return JsErrorCategoryFatal;
     }
-
     return JsNoError;
 #endif
 }
@@ -4141,12 +4141,16 @@ CHAKRA_API JsTTDAllocTracingCompleteAndEmit(_In_reads_(allocFileSize) char* allo
             //Do a GC to ensure all the collectable object have been collected
             threadContext->GetRecycler()->CollectNow<CollectNowForceInThread>();
 
-            AllocTracing::AllocDataWriter writer;
-            threadContext->AllocSiteTracer->JSONWriteData(writer);
+            // collect the snapshot first, since it adds source files to the alloc tracer dataset
+            // if (TTD::TTMemAnalysis::recentSnapShot != nullptr) {
+            //     // dump the memory snapshot
+            //     TTD::TTMemAnalysis::recentSnapShot->EmitTrimedSnapshot(0, threadContext);
+            // }
 
-            //
-            //TODO: Take a new snapshot and emit it here!!!
-            //
+            AllocTracing::AllocDataWriter writer;
+
+            // threadContext->AllocSiteTracer->JSONWriteData(writer);
+            threadContext->AllocSiteTracer->EmitTrimedAllocTrace(0, threadContext);
         }
         END_ENTER_SCRIPT
     }

@@ -202,6 +202,7 @@ ThreadContext::ThreadContext(AllocationPolicyManager * allocationPolicyManager, 
     , TTDRootNestingCount(0)
 #if ENABLE_ALLOC_TRACING
     , AllocSiteTracer(nullptr)
+    , doAllocTracing(false)
 #endif
 #endif
 #ifdef ENABLE_DIRECTCALL_TELEMETRY

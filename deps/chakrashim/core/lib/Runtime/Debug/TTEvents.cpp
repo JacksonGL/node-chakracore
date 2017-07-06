@@ -54,11 +54,10 @@ namespace TTD
 #endif
 
             auto emitFP = evtFPVTable[(uint32)evt->EventKind].EmitFP;
-            if(emitFP != nullptr)
+            if (emitFP != nullptr)
             {
                 emitFP(evt, writer, threadContext);
             }
-
             writer->WriteRecordEnd();
         }
 
@@ -130,7 +129,6 @@ namespace TTD
             const SnapshotEventLogEntry* snapEvt = GetInlineEventDataAs<SnapshotEventLogEntry, EventKind::SnapshotTag>(evt);
 
             writer->WriteInt64(NSTokens::Key::restoreTime, snapEvt->RestoreTimestamp, NSTokens::Separator::CommaSeparator);
-
             writer->WriteLengthValue(snapEvt->LiveContextCount, NSTokens::Separator::CommaSeparator);
             writer->WriteSequenceStart_DefaultKey(NSTokens::Separator::CommaSeparator);
             for(uint32 i = 0; i < snapEvt->LiveContextCount; ++i)
@@ -150,6 +148,7 @@ namespace TTD
             if(snapEvt->Snap != nullptr)
             {
                 snapEvt->Snap->EmitSnapshot(snapEvt->RestoreTimestamp, threadContext);
+                snapEvt->Snap->EmitTrimedSnapshot(snapEvt->RestoreTimestamp, threadContext);
             }
         }
 

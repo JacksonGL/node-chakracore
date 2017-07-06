@@ -1661,8 +1661,20 @@ LHexError:
             return jslib->GetFalse();
         }
 
+        Js::JavascriptString* jsString = Js::JavascriptString::FromVar(args[1]);
+        const char* uri = HeapNewArrayZ(char, jsString->GetLength() * 3);
+        size_t uriLength = utf8::EncodeInto((LPUTF8)((char*)uri), jsString->GetSz(), jsString->GetLength());
+        ThreadContext* threadContext = function->GetScriptContext()->GetThreadContext();
+
         if(function->GetScriptContext()->ShouldPerformReplayAction())
         {
+            TTD::TTDataIOInfo& iofp = threadContext->TTDContext->TTDataIOInfo;
+            iofp.ActiveTTUriLength = uriLength;
+            iofp.ActiveTTUri = uri;
+
+            // during replay also emit the snapshot into JS standard JSON file
+            function->GetScriptContext()->GetThreadContext()->TTDLog->ExtractAndDumpSnapshotToJSON(uri, uriLength);
+
             function->GetScriptContext()->GetThreadContext()->TTDLog->ReplayEmitLogEvent();
 
             return jslib->GetTrue();
@@ -1670,8 +1682,23 @@ LHexError:
 
         if(function->GetScriptContext()->ShouldPerformRecordAction())
         {
-            Js::JavascriptString* jsString = Js::JavascriptString::FromVar(args[1]);
             function->GetScriptContext()->GetThreadContext()->TTDLog->RecordEmitLogEvent(jsString);
+
+            AllocTracing::AllocTracer* tracer = function->GetScriptContext()->GetThreadContext()->AllocSiteTracer;
+            if (tracer != nullptr)
+            {
+                // capture the JSON snapshot during the recording phase
+                try {
+                    threadContext->GetRecycler()->CollectNow<CollectNowForceInThread>();
+                    threadContext->TTDContext->SyncRootsBeforeSnapshot_Record();
+                    function->GetScriptContext()->GetThreadContext()->TTDLog->ExtractAndDumpSnapshotToJSON(uri, uriLength);
+                }
+                catch (...) {
+                    printf("[!]: Snapshot extraction failed.");
+                }
+                tracer->ForceAllData();
+                tracer->EmitTrimedAllocTrace(0, function->GetScriptContext()->GetThreadContext());
+            }
 
             return jslib->GetTrue();
         }

@@ -1009,6 +1009,7 @@ public:
 
 #if ENABLE_ALLOC_TRACING
     AllocTracing::AllocTracer* AllocSiteTracer;
+    bool doAllocTracing;
 #endif
 #endif
 

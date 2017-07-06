@@ -73,6 +73,8 @@ namespace TTD
 
         //serialize the TTDVar
         void EmitTTDVar(TTDVar var, FileWriter* writer, NSTokens::Separator separator);
+        void EmitTTDVarTrimed(TTDVar var, FileWriter* writer, NSTokens::Separator separator);
+        void EmitTTDVarTrimedWithoutBracket(TTDVar var, FileWriter* writer, NSTokens::Separator separator);
 
         //de-serialize the TTDVar
         TTDVar ParseTTDVar(bool readSeperator, FileReader* reader);
@@ -119,6 +121,7 @@ namespace TTD
         void InflateSnapPrimitiveValue(const SnapPrimitiveValue* snapValue, InflateMap* inflator);
 
         void EmitSnapPrimitiveValue(const SnapPrimitiveValue* snapValue, FileWriter* writer, NSTokens::Separator separator);
+        void EmitSnapPrimitiveValueTrimed(const SnapPrimitiveValue* snapValue, FileWriter* writer, NSTokens::Separator separator);
         void ParseSnapPrimitiveValue(SnapPrimitiveValue* snapValue, bool readSeperator, FileReader* reader, SlabAllocator& alloc, const TTDIdentifierDictionary<TTD_PTR_ID, NSSnapType::SnapType*>& ptrIdToTypeMap);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -156,6 +159,7 @@ namespace TTD
         Js::Var* InflateSlotArrayInfo(const SlotArrayInfo* slotInfo, InflateMap* inflator);
 
         void EmitSlotArrayInfo(const SlotArrayInfo* slotInfo, FileWriter* writer, NSTokens::Separator separator);
+        void EmitSlotArrayInfoTrimed(const SlotArrayInfo* slotInfo, FileWriter* writer, NSTokens::Separator separator);
         void ParseSlotArrayInfo(SlotArrayInfo* slotInfo, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -192,6 +196,7 @@ namespace TTD
         Js::FrameDisplay* InflateScriptFunctionScopeInfo(const ScriptFunctionScopeInfo* funcScopeInfo, InflateMap* inflator);
 
         void EmitScriptFunctionScopeInfo(const ScriptFunctionScopeInfo* funcScopeInfo, FileWriter* writer, NSTokens::Separator separator);
+        void EmitScriptFunctionScopeInfoTrimed(const ScriptFunctionScopeInfo* funcScopeInfo, FileWriter* writer, NSTokens::Separator separator);
         void ParseScriptFunctionScopeInfo(ScriptFunctionScopeInfo* funcScopeInfo, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -214,6 +219,7 @@ namespace TTD
         Js::JavascriptPromiseCapability* InflatePromiseCapabilityInfo(const SnapPromiseCapabilityInfo* capabilityInfo, Js::ScriptContext* ctx, InflateMap* inflator);
 
         void EmitPromiseCapabilityInfo(const SnapPromiseCapabilityInfo* capabilityInfo, FileWriter* writer, NSTokens::Separator separator);
+        void EmitPromiseCapabilityInfoTrimed(const SnapPromiseCapabilityInfo* capabilityInfo, FileWriter* writer, NSTokens::Separator separator);
         void ParsePromiseCapabilityInfo(SnapPromiseCapabilityInfo* capabilityInfo, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -233,6 +239,7 @@ namespace TTD
         Js::JavascriptPromiseReaction* InflatePromiseReactionInfo(const SnapPromiseReactionInfo* reactionInfo, Js::ScriptContext* ctx, InflateMap* inflator);
 
         void EmitPromiseReactionInfo(const SnapPromiseReactionInfo* reactionInfo, FileWriter* writer, NSTokens::Separator separator);
+        void EmitPromiseReactionInfoTrimed(const SnapPromiseReactionInfo* reactionInfo, FileWriter* writer, NSTokens::Separator separator);
         void ParsePromiseReactionInfo(SnapPromiseReactionInfo* reactionInfo, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -254,6 +261,7 @@ namespace TTD
         void ExtractSnapFunctionBodyScopeChain(bool isWellKnownFunction, SnapFunctionBodyScopeChain& scopeChain, Js::FunctionBody* fb, SlabAllocator& alloc);
 
         void EmitSnapFunctionBodyScopeChain(const SnapFunctionBodyScopeChain& scopeChain, FileWriter* writer);
+        void EmitSnapFunctionBodyScopeChainTrimed(const SnapFunctionBodyScopeChain& scopeChain, FileWriter* writer);
         void ParseSnapFunctionBodyScopeChain(SnapFunctionBodyScopeChain& scopeChain, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -389,12 +397,16 @@ namespace TTD
 
             //The (possibly empty) scope chain info
             SnapFunctionBodyScopeChain ScopeChainInfo;
+
+            //The id of the source code file that contains this function
+            int64 fileId;
         };
 
         void ExtractFunctionBodyInfo(FunctionBodyResolveInfo* fbInfo, Js::FunctionBody* fb, bool isWellKnown, SlabAllocator& alloc);
         void InflateFunctionBody(const FunctionBodyResolveInfo* fbInfo, InflateMap* inflator, const TTDIdentifierDictionary<TTD_PTR_ID, FunctionBodyResolveInfo*>& idToFbResolveMap);
 
         void EmitFunctionBodyInfo(const FunctionBodyResolveInfo* fbInfo, FileWriter* writer, NSTokens::Separator separator);
+        void EmitFunctionBodyInfoTrimed(const FunctionBodyResolveInfo* fbInfo, FileWriter* writer, NSTokens::Separator separator);
         void ParseFunctionBodyInfo(FunctionBodyResolveInfo* fbInfo, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 
@@ -463,6 +475,7 @@ namespace TTD
         void ResetPendingAsyncBufferModInfo(const SnapContext* snpCtx, Js::ScriptContext* intoCtx, InflateMap* inflator);
 
         void EmitSnapContext(const SnapContext* snapCtx, FileWriter* writer, NSTokens::Separator separator);
+        void EmitSnapContextTrimed(const SnapContext* snapCtx, FileWriter* writer, NSTokens::Separator separator);
         void ParseSnapContext(SnapContext* intoCtx, bool readSeperator, FileReader* reader, SlabAllocator& alloc);
 
 #if ENABLE_SNAPSHOT_COMPARE 

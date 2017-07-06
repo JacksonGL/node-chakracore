@@ -540,6 +540,7 @@ enum tagDEBUG_EVENT_INFO_TYPE
 #if ENABLE_TTD
 #include "screrror.h"
 
+#include "Debug/TTMemAnalysis.h"
 #include "Debug/TTRuntimeInfoTracker.h"
 #include "Debug/TTExecutionInfo.h"
 #include "Debug/TTInflateMap.h"
