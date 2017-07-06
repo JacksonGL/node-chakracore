@@ -362,7 +362,7 @@ class Environment {
     v8::Float64Array* uid_fields_ttdRef;
 
     void AsyncWrapId_TTDRecord() {
-      if (s_doTTRecord || s_doTTReplay) {
+      if ((s_doTTRecord || s_doTTReplay) && (uid_fields_ttdRef != nullptr)) {
         const int modlength = kUidFieldsCount * sizeof(double);
         uid_fields_ttdRef->Buffer()->TTDRawBufferModifyNotifySync(0, modlength);
       }
