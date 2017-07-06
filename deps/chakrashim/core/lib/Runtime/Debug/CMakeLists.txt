@@ -13,6 +13,7 @@ add_library (Chakra.Runtime.Debug OBJECT
     RuntimeDebugPch.cpp
     SourceContextInfo.cpp
     TTActionEvents.cpp
+    TTAllocTracing.cpp
     TTEventLog.cpp
     TTEvents.cpp
     TTExecutionInfo.cpp

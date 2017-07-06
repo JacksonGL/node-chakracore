@@ -172,7 +172,7 @@ namespace AllocTracing
             first = false;
             writer.WriteObjectId(key);
         });
-        writer.WriteChar(' ]');
+        writer.WriteLiteralString(" ]");
     }
 
     bool AllocTracer::IsInternalLocation(const AllocCallStackEntry& callEntry)
