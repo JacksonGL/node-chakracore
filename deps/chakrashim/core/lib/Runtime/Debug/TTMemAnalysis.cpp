@@ -4,7 +4,7 @@
 //-------------------------------------------------------------------------------------------------------
 #include "RuntimeDebugPch.h"
 #include "Debug/TTSnapshot.h"
-#include "Debug/TTMEMAnalysis.h"
+#include "Debug/TTMemAnalysis.h"
 
 #if ENABLE_TTD
 
