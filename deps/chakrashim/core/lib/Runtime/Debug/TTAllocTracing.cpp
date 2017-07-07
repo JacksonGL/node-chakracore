@@ -296,7 +296,11 @@ namespace AllocTracing
         }
 
         const char16* url = callEntry.Function->GetSourceContextInfo()->url;
+#ifdef _WIN32
         return (wcslen(url) <= 1 || (url[0] != _u('\\') && url[1] != _u(':')));
+#else
+        return (wcslen(url) <= 1 || (url[0] != _u('/') && url[1] != _u(':')));
+#endif
     }
 
     void AllocTracer::ExtractLineColumn(const AllocCallStackEntry& sentry, uint32* line, uint32* column)
