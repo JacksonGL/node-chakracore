@@ -1682,7 +1682,9 @@ LHexError:
 
         if(function->GetScriptContext()->ShouldPerformRecordAction())
         {
-            function->GetScriptContext()->GetThreadContext()->TTDLog->RecordEmitLogEvent(jsString);
+            TTD::TTDataIOInfo& iofp = threadContext->TTDContext->TTDataIOInfo;
+            iofp.ActiveTTUriLength = uriLength;
+            iofp.ActiveTTUri = uri;
 
             AllocTracing::AllocTracer* tracer = function->GetScriptContext()->GetThreadContext()->AllocSiteTracer;
             if (tracer != nullptr)
@@ -1699,6 +1701,7 @@ LHexError:
                 tracer->ForceAllData();
                 tracer->EmitTrimedAllocTrace(0, function->GetScriptContext()->GetThreadContext());
             }
+            function->GetScriptContext()->GetThreadContext()->TTDLog->RecordEmitLogEvent(jsString);
 
             return jslib->GetTrue();
         }

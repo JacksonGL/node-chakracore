@@ -283,7 +283,6 @@ namespace AllocTracing
             }
             first = false;
             writer.WriteNakedAddrAsInt64(TTD_CONVERT_VAR_TO_PTR_ID(key));
-            // writer.WriteNakedInt64(reinterpret_cast<uint64>(key));
         });
         writer.WriteSequenceEnd();
     }

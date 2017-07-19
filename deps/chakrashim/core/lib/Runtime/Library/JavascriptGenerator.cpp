@@ -232,7 +232,7 @@ namespace Js
 
     void JavascriptGenerator::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        TTDAssert(false, "Invalid -- JavascriptGenerator");
+        // TTDAssert(false, "Invalid -- JavascriptGenerator");
     }
 #endif
 }

@@ -494,8 +494,8 @@ namespace Js
 
     void JavascriptGeneratorFunction::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        return;
         // TTDAssert(false, "Invalid -- JavascriptGeneratorFunction");
+        printf("[!]: Use of generator, which is not supported by TTD now.\n");
     }
 
     TTD::NSSnapObjects::SnapObjectType JavascriptAsyncFunction::GetSnapTag_TTD() const
@@ -507,7 +507,7 @@ namespace Js
 
     void JavascriptAsyncFunction::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        return;
+        printf("[!]: Use of async function, which is not supported by TTD now.\n");
         //TTDAssert(false, "Invalid -- JavascriptGeneratorFunction");
     }
 
@@ -520,7 +520,6 @@ namespace Js
 
     void GeneratorVirtualScriptFunction::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        return;
         //TTDAssert(false, "Invalid -- GeneratorVirtualScriptFunction");
     }
 #endif

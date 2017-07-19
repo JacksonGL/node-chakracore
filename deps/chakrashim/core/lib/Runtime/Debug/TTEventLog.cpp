@@ -2448,7 +2448,7 @@ namespace TTD
         return evt;
     }
 
-    // newly added function to extract and dump snapshot to standard JS JSON file during the replay
+    // newly added function to extract and dump snapshot to standard JS JSON file during the record or replay
     void EventLog::ExtractAndDumpSnapshotToJSON(const char* emitUri, size_t emitUriLength)
     {
         //force a GC to get weak containers in a consistent state

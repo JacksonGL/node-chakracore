@@ -304,7 +304,7 @@ namespace Js
 
     void ActivationObjectEx::ExtractSnapObjectDataInto(TTD::NSSnapObjects::SnapObject* objData, TTD::SlabAllocator& alloc)
     {
-        TTDAssert(false, "Not implemented yet!!!");
+        // TTDAssert(false, "Not implemented yet!!!");
     }
 #endif
 };

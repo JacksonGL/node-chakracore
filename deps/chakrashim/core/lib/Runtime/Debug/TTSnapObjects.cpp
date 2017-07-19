@@ -1256,7 +1256,7 @@ namespace TTD
                 NSSnapValues::EmitTTDVarTrimed(promiseInfo->Result, writer, NSTokens::Separator::NoSeparator);
 
                 // writer->WriteLengthValue(promiseInfo->ResolveReactionCount, NSTokens::Separator::CommaSeparator);
-                writer->WriteSequenceStartWithKey(NSTokens::Key::promiseInfo, NSTokens::Separator::CommaSeparator);
+                writer->WriteSequenceStartWithKey(NSTokens::Key::resolveReactions, NSTokens::Separator::CommaSeparator);
                 for (uint32 i = 0; i < promiseInfo->ResolveReactionCount; ++i)
                 {
                     NSTokens::Separator sep = (i != 0) ? NSTokens::Separator::CommaSeparator : NSTokens::Separator::NoSeparator;

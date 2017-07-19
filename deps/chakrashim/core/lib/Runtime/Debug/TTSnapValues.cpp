@@ -1095,11 +1095,11 @@ namespace TTD
             writer->WriteSequenceStart();
             EmitTTDVarTrimed(capabilityInfo->PromiseVar, writer, NSTokens::Separator::NoSeparator);
 
-            writer->WriteKey(NSTokens::Key::entry, NSTokens::Separator::CommaSeparator);
-            EmitTTDVarTrimed(capabilityInfo->ResolveVar, writer, NSTokens::Separator::NoSeparator);
+            // writer->WriteKey(NSTokens::Key::entry, NSTokens::Separator::CommaSeparator);
+            EmitTTDVarTrimed(capabilityInfo->ResolveVar, writer, NSTokens::Separator::CommaSeparator);
 
-            writer->WriteKey(NSTokens::Key::entry, NSTokens::Separator::CommaSeparator);
-            EmitTTDVarTrimed(capabilityInfo->RejectVar, writer, NSTokens::Separator::NoSeparator);
+            // writer->WriteKey(NSTokens::Key::entry, NSTokens::Separator::CommaSeparator);
+            EmitTTDVarTrimed(capabilityInfo->RejectVar, writer, NSTokens::Separator::CommaSeparator);
             writer->WriteSequenceEnd();
 
             writer->WriteRecordEnd();
