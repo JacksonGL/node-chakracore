@@ -82,7 +82,7 @@ vcbuild chakracore nosign [x86|x64|arm]
 To run unit tests
 
 ```batch
-vcbuild chakracore nobuild test [x86|x64|arm]
+vcbuild chakracore nobuild [ttd] test [x86|x64|arm]
 ```
 
 To test if Node.js was built correctly with ChakraCore:

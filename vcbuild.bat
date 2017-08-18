@@ -102,6 +102,7 @@ if /i "%1"=="static"           set enable_static=1&goto arg-ok
 if /i "%1"=="v8"            set engine=v8&goto arg-ok
 if /i "%1"=="chakracore"    set engine=chakracore&goto arg-ok
 if /i "%1"=="no-NODE-OPTIONS"	set no_NODE_OPTIONS=1&goto arg-ok
+if /i "%1"=="ttd"           set test_args=%test_args% --ttd-record=record&goto arg-ok
 
 echo Error: invalid command line option `%1`.
 exit /b 1

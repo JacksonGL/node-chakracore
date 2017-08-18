@@ -513,6 +513,10 @@ class TestCase(object):
 
   def RunCommand(self, command, env):
     full_command = self.context.processor(command)
+
+    if self.context.ttd_record == 'record':
+      full_command.insert(1, "--record")
+
     output = Execute(full_command,
                      self.context,
                      self.context.GetTimeout(self.mode),
@@ -878,7 +882,7 @@ class Context(object):
 
   def __init__(self, workspace, buildspace, verbose, vm, args, expect_fail,
                timeout, processor, suppress_dialogs,
-               store_unexpected_output, repeat, abort_on_timeout,
+               store_unexpected_output, repeat, abort_on_timeout, ttd_record,
                v8_enable_inspector):
     self.workspace = workspace
     self.buildspace = buildspace
@@ -892,6 +896,7 @@ class Context(object):
     self.repeat = repeat
     self.abort_on_timeout = abort_on_timeout
     self.v8_enable_inspector = v8_enable_inspector
+    self.ttd_record = ttd_record
 
   def GetVm(self, arch, mode):
     if arch == 'none':
@@ -1386,6 +1391,9 @@ def BuildOptions():
   result.add_option("--flaky-tests",
       help="Regard tests marked as flaky (run|skip|dontcare)",
       default="run")
+  result.add_option("--ttd-record",
+      help="run test cases with TTD record (record|dontrecord)",
+      default="dontrecord")
   result.add_option("--warn-unused", help="Report unused rules",
       default=False, action="store_true")
   result.add_option("-j", help="The number of parallel tasks to run",
@@ -1609,6 +1617,7 @@ def Main():
                     options.store_unexpected_output,
                     options.repeat,
                     options.abort_on_timeout,
+                    options.ttd_record,
                     GetV8InspectorEnabledFlag())
 
   # Get status for tests
