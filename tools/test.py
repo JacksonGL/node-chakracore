@@ -514,7 +514,7 @@ class TestCase(object):
   def RunCommand(self, command, env):
     full_command = self.context.processor(command)
 
-    if self.context.ttd_record == 'record':
+    if self.context.ttd_record == 'record' and FLAKY in self.outcomes:
       full_command.insert(1, "--record")
 
     output = Execute(full_command,
