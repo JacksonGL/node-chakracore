@@ -2575,6 +2575,11 @@ IR::Instr * Inline::InlineApplyWithoutArrayArgument(IR::Instr *callInstr, const 
         return callInstr;
     }
 
+    if (!applyTargetInfo)
+    {
+        return callInstr;
+    }
+
     bool safeThis = false;
     if (TryOptimizeCallInstrWithFixedMethod(callInstr, applyTargetInfo, false /*isPolymorphic*/, false /*isBuiltIn*/, false /*isCtor*/, true /*isInlined*/, safeThis /*unused here*/))
     {
@@ -2611,7 +2616,7 @@ void Inline::GetArgInstrsForCallAndApply(IR::Instr* callInstr, IR::Instr** impli
     linkOpnd->AsRegOpnd()->m_sym->m_isInlinedArgSlot = true;
 }
 
-/* 
+/*
 This method only inlines targets which are script functions, under the
 condition that the second argument (if any) passed to apply is arguments object.
 */
@@ -2657,7 +2662,7 @@ bool Inline::InlineApplyScriptTarget(IR::Instr *callInstr, const FunctionJITTime
     const auto inlineCacheIndex = applyTargetLdOpnd->AsPropertySymOpnd()->m_inlineCacheIndex;
     const auto inlineeData = inlinerData->GetLdFldInlinee(inlineCacheIndex);
 
-    if ((!isArrayOpndArgumentsObject && (argsCount == 2)) || SkipCallApplyScriptTargetInlining_Shared(callInstr, inlinerData, inlineeData, /*isApplyTarget*/ true, /*isCallTarget*/ false))
+    if ((!isArrayOpndArgumentsObject && (argsCount != 1)) || SkipCallApplyScriptTargetInlining_Shared(callInstr, inlinerData, inlineeData, /*isApplyTarget*/ true, /*isCallTarget*/ false))
     {
         *pInlineeData = inlineeData;
         return false;
@@ -2701,6 +2706,13 @@ bool Inline::InlineApplyScriptTarget(IR::Instr *callInstr, const FunctionJITTime
         return false;
     });
 
+    // If the arguments object was passed in as the first argument to apply,
+    // 'arguments' access continues to exist even after apply target inlining 
+    if (!HasArgumentsAccess(explicitThisArgOut))
+    {
+        callInstr->m_func->SetApplyTargetInliningRemovedArgumentsAccess();
+    }
+
     if (safeThis)
     {
         IR::Instr * byteCodeArgOutCapture = explicitThisArgOut->GetBytecodeArgOutCapture();
@@ -2723,7 +2735,7 @@ bool Inline::InlineApplyScriptTarget(IR::Instr *callInstr, const FunctionJITTime
         argObjByteCodeArgoutCapture->GetDst()->GetStackSym()->m_nonEscapingArgObjAlias = true;
 
         argumentsObjArgOut->m_opcode = Js::OpCode::ArgOut_A_FromStackArgs;
-    
+
         IR::Instr *  bailOutOnNotStackArgs = IR::BailOutInstr::New(Js::OpCode::BailOnNotStackArgs, IR::BailOutOnInlineFunction,
             callInstr, callInstr->m_func);
         // set src1 to avoid CSE on BailOnNotStackArgs for different arguments object
@@ -3132,11 +3144,6 @@ Inline::TryGetFixedMethodsForBuiltInAndTarget(IR::Instr *callInstr, const Functi
             inlinerData->GetBody()->GetDisplayName(), inlinerData->GetDebugNumberSet(debugStringBuffer2),
             this->topFunc->GetJITFunctionBody()->GetDisplayName(), this->topFunc->GetDebugNumberSet(debugStringBuffer3));
         return false;
-    }
-
-    if (isApplyTarget)
-    {
-        callInstr->m_func->SetHasApplyTargetInlining();
     }
 
     Assert(callInstr->m_opcode == originalCallOpCode);
@@ -3701,7 +3708,7 @@ Inline::InlineFunctionCommon(IR::Instr *callInstr, bool originalCallTargetOpndIs
 // A functionInfo->Index# table is created in scriptContext (and potentially movable to threadContext if WS is not a concern).
 // we use the table to identify the helper that needs to be lowered.
 // At lower time we create the call to helper, which is function entrypoint at this time.
-IR::Instr * Inline::InlineDOMGetterSetterFunction(IR::Instr *ldFldInstr, const FunctionJITTimeInfo *const inlineeData, const FunctionJITTimeInfo *const inlinerData)
+void Inline::InlineDOMGetterSetterFunction(IR::Instr *ldFldInstr, const FunctionJITTimeInfo *const inlineeData, const FunctionJITTimeInfo *const inlinerData)
 {
     intptr_t functionInfo = inlineeData->GetFunctionInfoAddr();
 
@@ -3712,7 +3719,11 @@ IR::Instr * Inline::InlineDOMGetterSetterFunction(IR::Instr *ldFldInstr, const F
 
     // Find the helper routine for this functionInfo.
     IR::JnHelperMethod helperMethod = this->topFunc->GetScriptContextInfo()->GetDOMFastPathHelper(functionInfo);
-
+    if (helperMethod == IR::HelperInvalid)
+    {
+        // abort inlining if helper isn't found
+        return;
+    }
     // Find the instance object (External object).
     PropertySym * fieldSym = ldFldInstr->GetSrc1()->AsSymOpnd()->m_sym->AsPropertySym();
     IR::RegOpnd * instanceOpnd = IR::RegOpnd::New(fieldSym->m_stackSym, TyMachPtr, ldFldInstr->m_func);
@@ -3744,7 +3755,11 @@ IR::Instr * Inline::InlineDOMGetterSetterFunction(IR::Instr *ldFldInstr, const F
 
     StackSym * tmpSym = StackSym::New(ldFldInstr->GetDst()->GetType(), ldFldInstr->m_func);
     IR::Opnd * tmpDst = IR::RegOpnd::New(tmpSym, tmpSym->GetType(), ldFldInstr->m_func);
-
+    // Ensure that the original LdFld's dst profile data is also copied to the new instruction for later
+    // type-specific optimizations. Otherwise, this optimization to reduce calls into the host will also
+    // result in relatively more expensive calls in the runtime.
+    tmpDst->SetValueType(ldFldInstr->GetDst()->GetValueType());
+    
     IR::Opnd * callInstrDst = ldFldInstr->UnlinkDst();
     ldFldInstr->SetDst(tmpDst);
 
@@ -3754,8 +3769,6 @@ IR::Instr * Inline::InlineDOMGetterSetterFunction(IR::Instr *ldFldInstr, const F
     this->topFunc->SetHasInlinee();
 
     InsertStatementBoundary(ldInstr->m_next);
-
-    return ldInstr->m_next;
 }
 #endif
 void
@@ -4683,7 +4696,7 @@ Inline::MapFormals(Func *inlinee,
             }
 
             int excess;
-            Js::ArgSlot restFuncFormalCount = 0;
+            uint restFuncFormalCount = 0;
             if (instr->m_func != inlinee)
             {
                 restFuncFormalCount = instr->m_func->GetJITFunctionBody()->GetInParamsCount();
@@ -4716,18 +4729,35 @@ Inline::MapFormals(Func *inlinee,
 
             if (instr->m_func != inlinee)
             {
-                for (uint i = restFuncFormalCount; i < formalCount; ++i)
+                uint index = 0;
+                for (uint i = restFuncFormalCount; i < min(actualCount, formalCount); ++i)
                 {
-                    IR::IndirOpnd *arrayLocOpnd = IR::IndirOpnd::New(restDst->AsRegOpnd(), i - restFuncFormalCount, TyVar, inlinee);
+                    IR::IndirOpnd *arrayLocOpnd = IR::IndirOpnd::New(restDst->AsRegOpnd(), index, TyVar, inlinee);
                     IR::Instr *stElemInstr = IR::Instr::New(Js::OpCode::StElemC, arrayLocOpnd, argOuts[i]->GetBytecodeArgOutCapture()->GetDst(), inlinee);
                     instr->InsertBefore(stElemInstr);
+                    index++;
+                }
+                for (uint i = max(formalCount, restFuncFormalCount); i < actualCount; ++i)
+                {
+                    IR::IndirOpnd *arrayLocOpnd = IR::IndirOpnd::New(restDst->AsRegOpnd(), index, TyVar, inlinee);
+                    IR::Instr *stElemInstr = IR::Instr::New(Js::OpCode::StElemC, arrayLocOpnd, argOutsExtra[i]->GetBytecodeArgOutCapture()->GetDst(), inlinee);
+                    instr->InsertBefore(stElemInstr);
+                    index++;
+                }
+                AssertMsg(index == (uint)excess, "Incorrect rest args built");
+                if (index != (uint)excess)
+                {
+                    throw Js::OperationAbortedException();
                 }
             }
-            for (uint i = formalCount; i < actualCount; ++i)
+            else
             {
-                IR::IndirOpnd *arrayLocOpnd = IR::IndirOpnd::New(restDst->AsRegOpnd(), (i + restFuncFormalCount) - formalCount, TyVar, inlinee);
-                IR::Instr *stElemInstr = IR::Instr::New(Js::OpCode::StElemC, arrayLocOpnd, argOutsExtra[i]->GetBytecodeArgOutCapture()->GetDst(), inlinee);
-                instr->InsertBefore(stElemInstr);
+                for (uint i = formalCount; i < actualCount; ++i)
+                {
+                    IR::IndirOpnd *arrayLocOpnd = IR::IndirOpnd::New(restDst->AsRegOpnd(), i - formalCount, TyVar, inlinee);
+                    IR::Instr *stElemInstr = IR::Instr::New(Js::OpCode::StElemC, arrayLocOpnd, argOutsExtra[i]->GetBytecodeArgOutCapture()->GetDst(), inlinee);
+                    instr->InsertBefore(stElemInstr);
+                }
             }
 
             instr->Remove();
@@ -5121,13 +5151,14 @@ Inline::FixupExtraActualParams(IR::Instr * instr, IR::Instr *argOuts[], IR::Inst
 {
     Assert(instr->m_opcode == Js::OpCode::ArgOut_A_FromStackArgs);
 
-    int offsetFixup;
+    int offsetFixup = INT_MAX;
     Assert(instr->m_func->callSiteToArgumentsOffsetFixupMap->ContainsKey(callSiteId));
     instr->m_func->callSiteToArgumentsOffsetFixupMap->TryGetValue(callSiteId, &offsetFixup);
 
     StackSym *sym = instr->GetDst()->AsSymOpnd()->m_sym->AsStackSym();
     while (index < actualCount)
     {
+        Assert(offsetFixup != INT_MAX);
         IR::Instr* argOutToMapTo = argOuts[index] ? argOuts[index] : argOutsExtra[index];
         StackSym* newStackSym = StackSym::NewArgSlotSym(sym->GetArgSlotNum(), instr->m_func);
         newStackSym->m_isInlinedArgSlot = true;
@@ -5154,7 +5185,7 @@ Inline::RemoveExtraFixupArgouts(IR::Instr* instr, uint argoutRemoveCount, Js::Pr
 {
     Assert(instr->m_opcode == Js::OpCode::ArgOut_A_FromStackArgs);
 
-    int offsetFixup;
+    int offsetFixup = -1;
     Assert(instr->m_func->callSiteToArgumentsOffsetFixupMap->ContainsKey(callSiteId));
     instr->m_func->callSiteToArgumentsOffsetFixupMap->TryGetValue(callSiteId, &offsetFixup);
 
@@ -5162,6 +5193,7 @@ Inline::RemoveExtraFixupArgouts(IR::Instr* instr, uint argoutRemoveCount, Js::Pr
     IR::Instr* argInstr = instr->GetSrc2()->AsSymOpnd()->m_sym->AsStackSym()->GetInstrDef();
     for(uint argIndex = 0; argIndex < argoutRemoveCount; argIndex++)
     {
+        Assert(offsetFixup != -1);
         Assert(argInstr->m_opcode == Js::OpCode::ArgOut_A_FixupForStackArgs);
         Assert(!argInstr->HasByteCodeArgOutCapture()); // ArgOut_A_FixupForStackArgs should not be restored on bailout, so we don't generate ByteCodeArgOutCapture for these argouts.
 
@@ -5271,21 +5303,39 @@ Inline::IsArgumentsOpnd(IR::Opnd* opnd, SymID argumentsSymId)
     return false;
 }
 
+bool
+Inline::IsArgumentsOpnd(IR::Opnd* opnd)
+{
+    IR::Opnd * checkOpnd = opnd;
+    while (checkOpnd)
+    {
+        if (checkOpnd->IsArgumentsObject())
+        {
+            return true;
+        }
+        checkOpnd = checkOpnd->GetStackSym() && checkOpnd->GetStackSym()->IsSingleDef() ? checkOpnd->GetStackSym()->GetInstrDef()->GetSrc1() : nullptr;
+    }
+
+    return false;
+}
 
 bool
 Inline::HasArgumentsAccess(IR::Opnd *opnd, SymID argumentsSymId)
 {
     // We should look at dst last to correctly handle cases where it's the same as one of the src operands.
-    if (opnd)
+    IR::Opnd * checkOpnd = opnd;
+    while (checkOpnd)
     {
-        if (opnd->IsRegOpnd() || opnd->IsSymOpnd() || opnd->IsIndirOpnd())
+        if (checkOpnd->IsRegOpnd() || checkOpnd->IsSymOpnd() || checkOpnd->IsIndirOpnd())
         {
-            if (IsArgumentsOpnd(opnd, argumentsSymId))
+            if (IsArgumentsOpnd(checkOpnd, argumentsSymId))
             {
                 return true;
             }
         }
+        checkOpnd = checkOpnd->GetStackSym() && checkOpnd->GetStackSym()->IsSingleDef() ? checkOpnd->GetStackSym()->GetInstrDef()->GetSrc1() : nullptr;
     }
+
     return false;
 }
 
@@ -5319,6 +5369,13 @@ Inline::HasArgumentsAccess(IR::Instr * instr, SymID argumentsSymId)
 }
 
 bool
+Inline::HasArgumentsAccess(IR::Instr * instr)
+{
+    return (instr->GetSrc1() && IsArgumentsOpnd(instr->GetSrc1())) ||
+        (instr->GetSrc2() && IsArgumentsOpnd(instr->GetSrc2()));
+}
+
+bool
 Inline::GetInlineeHasArgumentObject(Func * inlinee)
 {
     if (!inlinee->GetJITFunctionBody()->UsesArgumentsObject())
@@ -5329,14 +5386,12 @@ Inline::GetInlineeHasArgumentObject(Func * inlinee)
 
     // Inlinee has arguments access
 
-    if (!inlinee->GetHasApplyTargetInlining())
+    if (!inlinee->GetApplyTargetInliningRemovedArgumentsAccess())
     {
-        // There is no apply target inlining (this.init.apply(this, arguments))
-        // So arguments access continues to exist
         return true;
     }
 
-    // Its possible there is no more arguments access after we inline apply target validate the same.
+    // Its possible there is no more arguments access after we inline apply target; validate the same.
     // This sounds expensive, but we are only walking inlinee which has apply target inlining optimization enabled.
     // Also we walk only instruction in that inlinee and not nested inlinees. So it is not expensive.
     SymID argumentsSymId = 0;

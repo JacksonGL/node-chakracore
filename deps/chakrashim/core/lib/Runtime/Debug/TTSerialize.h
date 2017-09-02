@@ -462,6 +462,8 @@ namespace TTD
                 {
                     size_t readCount = 0;
                     this->ReadBlock(remainingBuff, &readCount);
+
+                    TTDAssert(readCount > 0, "We are out of data but still need more");
                     remainingBuff += readCount;
                     remainingBytes -= readCount;
                 }

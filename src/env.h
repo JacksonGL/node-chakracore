@@ -1,4 +1,4 @@
-﻿// Copyright Joyent, Inc. and other Node contributors.
+// Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this software and associated documentation files (the
@@ -30,18 +30,25 @@
 #endif
 #include "handle_wrap.h"
 #include "req-wrap.h"
-#include "tree.h"
 #include "util.h"
 #include "uv.h"
 #include "v8.h"
 #include "node.h"
 
 #include <list>
+#include <map>
 #include <stdint.h>
 #include <vector>
 #include <stack>
+#include <unordered_map>
+
+struct nghttp2_rcbuf;
 
 namespace node {
+
+namespace http2 {
+struct http2_state;
+}
 
 // Pick an index that's hopefully out of the way when we're embedded inside
 // another application. Performance-wise or memory-wise it doesn't matter:
@@ -97,22 +104,38 @@ namespace node {
   V(cached_data_rejected_string, "cachedDataRejected")                        \
   V(callback_string, "callback")                                              \
   V(change_string, "change")                                                  \
+  V(channel_string, "channel")                                                \
+  V(constants_string, "constants")                                            \
   V(oncertcb_string, "oncertcb")                                              \
   V(onclose_string, "_onclose")                                               \
   V(code_string, "code")                                                      \
   V(configurable_string, "configurable")                                      \
   V(cwd_string, "cwd")                                                        \
   V(dest_string, "dest")                                                      \
+  V(destroy_string, "destroy")                                                \
   V(detached_string, "detached")                                              \
   V(disposed_string, "_disposed")                                             \
+  V(dns_a_string, "A")                                                        \
+  V(dns_aaaa_string, "AAAA")                                                  \
+  V(dns_cname_string, "CNAME")                                                \
+  V(dns_mx_string, "MX")                                                      \
+  V(dns_naptr_string, "NAPTR")                                                \
+  V(dns_ns_string, "NS")                                                      \
+  V(dns_ptr_string, "PTR")                                                    \
+  V(dns_soa_string, "SOA")                                                    \
+  V(dns_srv_string, "SRV")                                                    \
+  V(dns_txt_string, "TXT")                                                    \
   V(domain_string, "domain")                                                  \
+  V(emit_string, "emit")                                                      \
   V(emitting_top_level_domain_error_string, "_emittingTopLevelDomainError")   \
   V(exchange_string, "exchange")                                              \
   V(enumerable_string, "enumerable")                                          \
   V(idle_string, "idle")                                                      \
   V(irq_string, "irq")                                                        \
+  V(enablepush_string, "enablePush")                                          \
   V(encoding_string, "encoding")                                              \
   V(enter_string, "enter")                                                    \
+  V(entries_string, "entries")                                                \
   V(env_pairs_string, "envPairs")                                             \
   V(errno_string, "errno")                                                    \
   V(error_string, "error")                                                    \
@@ -136,8 +159,11 @@ namespace node {
   V(get_shared_array_buffer_id_string, "_getSharedArrayBufferId")             \
   V(gid_string, "gid")                                                        \
   V(handle_string, "handle")                                                  \
+  V(heap_total_string, "heapTotal")                                           \
+  V(heap_used_string, "heapUsed")                                             \
   V(homedir_string, "homedir")                                                \
   V(hostmaster_string, "hostmaster")                                          \
+  V(id_string, "id")                                                          \
   V(ignore_string, "ignore")                                                  \
   V(immediate_callback_string, "_immediateCallback")                          \
   V(infoaccess_string, "infoAccess")                                          \
@@ -151,6 +177,7 @@ namespace node {
   V(issuer_string, "issuer")                                                  \
   V(issuercert_string, "issuerCertificate")                                   \
   V(kill_signal_string, "killSignal")                                         \
+  V(length_string, "length")                                                  \
   V(mac_string, "mac")                                                        \
   V(max_buffer_string, "maxBuffer")                                           \
   V(message_string, "message")                                                \
@@ -161,6 +188,7 @@ namespace node {
   V(netmask_string, "netmask")                                                \
   V(nice_string, "nice")                                                      \
   V(nsname_string, "nsname")                                                  \
+  V(nexttick_string, "nextTick")                                              \
   V(ocsp_request_string, "OCSPRequest")                                       \
   V(onchange_string, "onchange")                                              \
   V(onclienthello_string, "onclienthello")                                    \
@@ -169,19 +197,27 @@ namespace node {
   V(ondone_string, "ondone")                                                  \
   V(onerror_string, "onerror")                                                \
   V(onexit_string, "onexit")                                                  \
+  V(onframeerror_string, "onframeerror")                                      \
+  V(ongetpadding_string, "ongetpadding")                                      \
   V(onhandshakedone_string, "onhandshakedone")                                \
   V(onhandshakestart_string, "onhandshakestart")                              \
+  V(onheaders_string, "onheaders")                                            \
   V(onmessage_string, "onmessage")                                            \
   V(onnewsession_string, "onnewsession")                                      \
   V(onnewsessiondone_string, "onnewsessiondone")                              \
   V(onocspresponse_string, "onocspresponse")                                  \
+  V(ongoawaydata_string, "ongoawaydata")                                      \
+  V(onpriority_string, "onpriority")                                          \
   V(onread_string, "onread")                                                  \
   V(onreadstart_string, "onreadstart")                                        \
   V(onreadstop_string, "onreadstop")                                          \
   V(onselect_string, "onselect")                                              \
+  V(onsettings_string, "onsettings")                                          \
   V(onshutdown_string, "onshutdown")                                          \
   V(onsignal_string, "onsignal")                                              \
   V(onstop_string, "onstop")                                                  \
+  V(onstreamclose_string, "onstreamclose")                                    \
+  V(ontrailers_string, "ontrailers")                                          \
   V(onwrite_string, "onwrite")                                                \
   V(output_string, "output")                                                  \
   V(order_string, "order")                                                    \
@@ -195,8 +231,6 @@ namespace node {
   V(preference_string, "preference")                                          \
   V(priority_string, "priority")                                              \
   V(produce_cached_data_string, "produceCachedData")                          \
-  V(promise_wrap, "_promise_async_wrap")                                      \
-  V(promise_async_tag, "_promise_async_wrap_tag")                             \
   V(raw_string, "raw")                                                        \
   V(read_host_object_string, "_readHostObject")                               \
   V(readable_string, "readable")                                              \
@@ -223,6 +257,7 @@ namespace node {
   V(stack_string, "stack")                                                    \
   V(status_string, "status")                                                  \
   V(stdio_string, "stdio")                                                    \
+  V(stream_string, "stream")                                                  \
   V(subject_string, "subject")                                                \
   V(subjectaltname_string, "subjectaltname")                                  \
   V(sys_string, "sys")                                                        \
@@ -233,6 +268,7 @@ namespace node {
   V(timeout_string, "timeout")                                                \
   V(times_string, "times")                                                    \
   V(tls_ticket_string, "tlsTicket")                                           \
+  V(ttl_string, "ttl")                                                        \
   V(type_string, "type")                                                      \
   V(uid_string, "uid")                                                        \
   V(unknown_string, "<unknown>")                                              \
@@ -250,7 +286,7 @@ namespace node {
   V(write_host_object_string, "_writeHostObject")                             \
   V(write_queue_size_string, "writeQueueSize")                                \
   V(x_forwarded_string, "x-forwarded-for")                                    \
-  V(zero_return_string, "ZERO_RETURN")                                        \
+  V(zero_return_string, "ZERO_RETURN")
 
 #define ENVIRONMENT_STRONG_PERSISTENT_PROPERTIES(V)                           \
   V(as_external, v8::External)                                                \
@@ -258,19 +294,22 @@ namespace node {
   V(async_hooks_init_function, v8::Function)                                  \
   V(async_hooks_before_function, v8::Function)                                \
   V(async_hooks_after_function, v8::Function)                                 \
-  V(async_hooks_promise_object, v8::ObjectTemplate)                           \
   V(binding_cache_object, v8::Object)                                         \
   V(buffer_constructor_function, v8::Function)                                \
   V(buffer_prototype_object, v8::Object)                                      \
   V(context, v8::Context)                                                     \
   V(domain_array, v8::Array)                                                  \
   V(domains_stack_array, v8::Array)                                           \
+  V(inspector_console_api_object, v8::Object)                                 \
   V(jsstream_constructor_template, v8::FunctionTemplate)                      \
   V(module_load_list_array, v8::Array)                                        \
   V(pbkdf2_constructor_template, v8::ObjectTemplate)                          \
   V(pipe_constructor_template, v8::FunctionTemplate)                          \
+  V(performance_entry_callback, v8::Function)                                 \
+  V(performance_entry_template, v8::Function)                                 \
   V(process_object, v8::Object)                                               \
   V(promise_reject_function, v8::Function)                                    \
+  V(promise_wrap_template, v8::ObjectTemplate)                                \
   V(push_values_to_array_function, v8::Function)                              \
   V(randombytes_constructor_template, v8::ObjectTemplate)                     \
   V(script_context_constructor_template, v8::FunctionTemplate)                \
@@ -287,19 +326,10 @@ namespace node {
 
 class Environment;
 
-struct node_ares_task {
-  Environment* env;
-  ares_socket_t sock;
-  uv_poll_t poll_watcher;
-  RB_ENTRY(node_ares_task) node;
-};
-
 struct node_async_ids {
   double async_id;
   double trigger_id;
 };
-
-RB_HEAD(node_ares_task_list, node_ares_task);
 
 class IsolateData {
  public:
@@ -317,6 +347,8 @@ class IsolateData {
 #undef V
 #undef VS
 #undef VP
+
+  std::unordered_map<nghttp2_rcbuf*, v8::Eternal<v8::String>> http2_static_strs;
 
  private:
 #define VP(PropertyName, StringValue) V(v8::Private, PropertyName)
@@ -346,6 +378,7 @@ class Environment {
       kBefore,
       kAfter,
       kDestroy,
+      kTotals,
       kFieldsCount,
     };
 
@@ -358,7 +391,7 @@ class Environment {
     };
 
 #if ENABLE_TTD_NODE
-    //Work around AsyncHooks id hack
+    // Work around AsyncHooks id hack
     v8::Float64Array* uid_fields_ttdRef;
 
     void AsyncWrapId_TTDRecord() {
@@ -392,7 +425,7 @@ class Environment {
 
      private:
       Environment* env_;
-      double* uid_fields_;
+      double* uid_fields_ref_;
 
       DISALLOW_COPY_AND_ASSIGN(InitScope);
     };
@@ -425,12 +458,10 @@ class Environment {
     v8::Isolate* isolate_;
     // Stores the ids of the current execution context stack.
     std::stack<struct node_async_ids> ids_stack_;
-    // Used to communicate state between C++ and JS cheaply. Is placed in an
-    // Uint32Array() and attached to the async_wrap object.
+    // Attached to a Uint32Array that tracks the number of active hooks for
+    // each type.
     uint32_t fields_[kFieldsCount];
-    // Used to communicate ids between C++ and JS cheaply. Placed in a
-    // Float64Array and attached to the async_wrap object. Using a double only
-    // gives us 2^53-1 unique ids, but that should be sufficient.
+    // Attached to a Float64Array that tracks the state of async resources.
     double uid_fields_[kUidFieldsCount];
 
     DISALLOW_COPY_AND_ASSIGN(AsyncHooks);
@@ -541,10 +572,10 @@ class Environment {
   inline uint32_t watched_providers() const;
 
   static inline Environment* from_immediate_check_handle(uv_check_t* handle);
-  static inline Environment* from_destroy_ids_idle_handle(uv_idle_t* handle);
+  static inline Environment* from_destroy_ids_timer_handle(uv_timer_t* handle);
   inline uv_check_t* immediate_check_handle();
   inline uv_idle_t* immediate_idle_handle();
-  inline uv_idle_t* destroy_ids_idle_handle();
+  inline uv_timer_t* destroy_ids_timer_handle();
 
   // Register clean-up cb to be called on environment destruction.
   inline void RegisterHandleCleanup(uv_handle_t* handle,
@@ -557,15 +588,6 @@ class Environment {
   inline TickInfo* tick_info();
   inline uint64_t timer_base() const;
 
-  static inline Environment* from_cares_timer_handle(uv_timer_t* handle);
-  inline uv_timer_t* cares_timer_handle();
-  inline ares_channel cares_channel();
-  inline ares_channel* cares_channel_ptr();
-  inline bool cares_query_last_ok();
-  inline void set_cares_query_last_ok(bool ok);
-  inline bool cares_is_servers_default();
-  inline void set_cares_is_servers_default(bool is_default);
-  inline node_ares_task_list* cares_task_list();
   inline IsolateData* isolate_data() const;
 
   inline bool using_domains() const;
@@ -599,8 +621,22 @@ class Environment {
   inline char* http_parser_buffer() const;
   inline void set_http_parser_buffer(char* buffer);
 
+  inline http2::http2_state* http2_state_buffer() const;
+  inline void set_http2_state_buffer(http2::http2_state* buffer);
+
   inline v8::Local<v8::Float64Array> fs_stats_field_array() const;
   inline void set_fs_stats_field_array(v8::Local<v8::Float64Array> fields);
+
+  inline performance::performance_state* performance_state();
+  inline std::map<std::string, uint64_t>* performance_marks();
+
+  static inline Environment* from_performance_check_handle(uv_check_t* handle);
+  static inline Environment* from_performance_idle_handle(uv_idle_t* handle);
+  static inline Environment* from_performance_prepare_handle(
+      uv_prepare_t* handle);
+  inline uv_check_t* performance_check_handle();
+  inline uv_idle_t* performance_idle_handle();
+  inline uv_prepare_t* performance_prepare_handle();
 
   inline void ThrowError(const char* errmsg);
   inline void ThrowTypeError(const char* errmsg);
@@ -668,6 +704,7 @@ class Environment {
   static const int kContextEmbedderDataIndex = NODE_CONTEXT_EMBEDDER_DATA_INDEX;
 
   void AddPromiseHook(promise_hook_func fn, void* arg);
+  bool RemovePromiseHook(promise_hook_func fn, void* arg);
 
  private:
   inline void ThrowError(v8::Local<v8::Value> (*fun)(v8::Local<v8::String>),
@@ -677,24 +714,27 @@ class Environment {
   IsolateData* const isolate_data_;
   uv_check_t immediate_check_handle_;
   uv_idle_t immediate_idle_handle_;
-  uv_idle_t destroy_ids_idle_handle_;
+  uv_timer_t destroy_ids_timer_handle_;
   uv_prepare_t idle_prepare_handle_;
   uv_check_t idle_check_handle_;
+  uv_prepare_t performance_prepare_handle_;
+  uv_check_t performance_check_handle_;
+  uv_idle_t performance_idle_handle_;
+
   AsyncHooks async_hooks_;
   DomainFlag domain_flag_;
   TickInfo tick_info_;
   const uint64_t timer_base_;
-  uv_timer_t cares_timer_handle_;
-  ares_channel cares_channel_;
-  bool cares_query_last_ok_;
-  bool cares_is_servers_default_;
-  node_ares_task_list cares_task_list_;
   bool using_domains_;
   bool printed_error_;
   bool trace_sync_io_;
   bool abort_on_uncaught_exception_;
   size_t makecallback_cntr_;
   std::vector<double> destroy_ids_list_;
+
+  performance::performance_state* performance_state_ = nullptr;
+  std::map<std::string, uint64_t> performance_marks_;
+
 #if HAVE_INSPECTOR
   inspector::Agent inspector_agent_;
 #endif
@@ -709,6 +749,7 @@ class Environment {
   double* heap_space_statistics_buffer_ = nullptr;
 
   char* http_parser_buffer_;
+  http2::http2_state* http2_state_buffer_ = nullptr;
 
   // We depend on the property in fs.js to manage the lifetime appropriately
   v8::Global<v8::Float64Array> fs_stats_field_array_;
@@ -722,6 +763,7 @@ class Environment {
   struct PromiseHookCallback {
     promise_hook_func cb_;
     void* arg_;
+    size_t enable_count_;
   };
   std::vector<PromiseHookCallback> promise_hooks_;
 

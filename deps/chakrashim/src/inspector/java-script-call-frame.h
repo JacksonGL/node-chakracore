@@ -28,8 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef V8_INSPECTOR_JAVASCRIPTCALLFRAME_H_
-#define V8_INSPECTOR_JAVASCRIPTCALLFRAME_H_
+#ifndef DEPS_CHAKRASHIM_SRC_INSPECTOR_JAVA_SCRIPT_CALL_FRAME_H_
+#define DEPS_CHAKRASHIM_SRC_INSPECTOR_JAVA_SCRIPT_CALL_FRAME_H_
 
 #include <vector>
 
@@ -42,9 +42,8 @@ namespace v8_inspector {
 
 class JavaScriptCallFrame {
  public:
-  static std::unique_ptr<JavaScriptCallFrame> create(
-      v8::Local<v8::Context> debuggerContext, JsValueRef callFrame) {
-    return wrapUnique(new JavaScriptCallFrame(debuggerContext, callFrame));
+  static std::unique_ptr<JavaScriptCallFrame> create(JsValueRef callFrame) {
+    return wrapUnique(new JavaScriptCallFrame(callFrame));
   }
   ~JavaScriptCallFrame();
 
@@ -57,18 +56,15 @@ class JavaScriptCallFrame {
   v8::Local<v8::Object> details() const;
 
   v8::MaybeLocal<v8::Value> evaluate(v8::Local<v8::Value> expression,
-                                     bool* isError);
+                                     bool returnByValue, bool* isError);
   v8::MaybeLocal<v8::Value> restart();
   v8::MaybeLocal<v8::Value> setVariableValue(int scopeNumber,
                                              v8::Local<v8::Value> variableName,
                                              v8::Local<v8::Value> newValue);
 
  private:
-  JavaScriptCallFrame(v8::Local<v8::Context> debuggerContext,
-                      JsValueRef callFrame);
+  explicit JavaScriptCallFrame(JsValueRef callFrame);
 
-  v8::Isolate* m_isolate;
-  v8::Global<v8::Context> m_debuggerContext;
   JsValueRef const m_callFrame;
 
   DISALLOW_COPY_AND_ASSIGN(JavaScriptCallFrame);
@@ -78,4 +74,4 @@ using JavaScriptCallFrames = std::vector<std::unique_ptr<JavaScriptCallFrame>>;
 
 }  // namespace v8_inspector
 
-#endif  // V8_INSPECTOR_JAVASCRIPTCALLFRAME_H_
+#endif  // DEPS_CHAKRASHIM_SRC_INSPECTOR_JAVA_SCRIPT_CALL_FRAME_H_

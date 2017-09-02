@@ -16,7 +16,9 @@ using v8::FunctionCallbackInfo;
 using v8::FunctionTemplate;
 using v8::HandleScope;
 using v8::Local;
+using v8::MaybeLocal;
 using v8::Object;
+using v8::String;
 using v8::Value;
 
 
@@ -46,22 +48,26 @@ bool JSStream::IsAlive() {
   v8::Local<v8::Value> fn = object()->Get(env()->isalive_string());
   if (!fn->IsFunction())
     return false;
-  return MakeCallback(fn.As<v8::Function>(), 0, nullptr)->IsTrue();
+  return MakeCallback(fn.As<v8::Function>(), 0, nullptr)
+      .ToLocalChecked()->IsTrue();
 }
 
 
 bool JSStream::IsClosing() {
-  return MakeCallback(env()->isclosing_string(), 0, nullptr)->IsTrue();
+  return MakeCallback(env()->isclosing_string(), 0, nullptr)
+      .ToLocalChecked()->IsTrue();
 }
 
 
 int JSStream::ReadStart() {
-  return MakeCallback(env()->onreadstart_string(), 0, nullptr)->Int32Value();
+  return MakeCallback(env()->onreadstart_string(), 0, nullptr)
+      .ToLocalChecked()->Int32Value();
 }
 
 
 int JSStream::ReadStop() {
-  return MakeCallback(env()->onreadstop_string(), 0, nullptr)->Int32Value();
+  return MakeCallback(env()->onreadstop_string(), 0, nullptr)
+      .ToLocalChecked()->Int32Value();
 }
 
 
@@ -73,10 +79,10 @@ int JSStream::DoShutdown(ShutdownWrap* req_wrap) {
   };
 
   req_wrap->Dispatched();
-  Local<Value> res =
+  MaybeLocal<Value> res =
       MakeCallback(env()->onshutdown_string(), arraysize(argv), argv);
 
-  return res->Int32Value();
+  return res.ToLocalChecked()->Int32Value();
 }
 
 
@@ -101,10 +107,10 @@ int JSStream::DoWrite(WriteWrap* w,
   };
 
   w->Dispatched();
-  Local<Value> res =
+  MaybeLocal<Value> res =
       MakeCallback(env()->onwrite_string(), arraysize(argv), argv);
 
-  return res->Int32Value();
+  return res.ToLocalChecked()->Int32Value();
 }
 
 
@@ -209,10 +215,12 @@ void JSStream::Initialize(Local<Object> target,
   Environment* env = Environment::GetCurrent(context);
 
   Local<FunctionTemplate> t = env->NewFunctionTemplate(New);
-  t->SetClassName(FIXED_ONE_BYTE_STRING(env->isolate(), "JSStream"));
+  Local<String> jsStreamString =
+      FIXED_ONE_BYTE_STRING(env->isolate(), "JSStream");
+  t->SetClassName(jsStreamString);
   t->InstanceTemplate()->SetInternalFieldCount(1);
 
-  env->SetProtoMethod(t, "getAsyncId", AsyncWrap::GetAsyncId);
+  AsyncWrap::AddWrapMethods(env, t);
 
   env->SetProtoMethod(t, "doAlloc", DoAlloc);
   env->SetProtoMethod(t, "doRead", DoRead);
@@ -223,8 +231,7 @@ void JSStream::Initialize(Local<Object> target,
   env->SetProtoMethod(t, "emitEOF", EmitEOF);
 
   StreamBase::AddMethods<JSStream>(env, t, StreamBase::kFlagHasWritev);
-  target->Set(FIXED_ONE_BYTE_STRING(env->isolate(), "JSStream"),
-              t->GetFunction());
+  target->Set(jsStreamString, t->GetFunction());
   env->set_jsstream_constructor_template(t);
 }
 

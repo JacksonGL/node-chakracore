@@ -70,7 +70,7 @@ namespace Js
         PnFnc func = node->sxFnc;
         ParseNode* first = func.pnodeParams;
         // throws OOM on uint16 overflow
-        for( ParseNode* pnode = first; pnode; pnode = pnode->sxVar.pnodeNext, UInt16Math::Inc(numformals));
+        for( ParseNode* pnode = first; pnode; pnode = pnode->sxVar.pnodeNext, ArgSlotMath::Inc(numformals));
         return first;
     }
 
@@ -146,32 +146,6 @@ namespace Js
         va_list arglist;
         va_start( arglist, _msg );
         vswprintf_s( msg_, _msg, arglist );
-    }
-
-    Var AsmJsChangeHeapBuffer(RecyclableObject * function, CallInfo callInfo, ...)
-    {
-        PROBE_STACK(function->GetScriptContext(), Js::Constants::MinStackDefault);
-
-        ARGUMENTS(args, callInfo);
-        ScriptContext* scriptContext = function->GetScriptContext();
-
-        Assert(!(callInfo.Flags & CallFlags_New));
-
-        if (args.Info.Count < 1 || !ArrayBuffer::Is(args[1]))
-        {
-            JavascriptError::ThrowTypeError(scriptContext, JSERR_NeedArrayBufferObject);
-        }
-
-
-        ArrayBuffer* newArrayBuffer = ArrayBuffer::FromVar(args[1]);
-        if (newArrayBuffer->IsDetached() || newArrayBuffer->GetByteLength() & 0xffffff || newArrayBuffer->GetByteLength() <= 0xffffff || newArrayBuffer->GetByteLength() > 0x80000000)
-        {
-            return JavascriptBoolean::ToVar(FALSE, scriptContext);
-        }
-        FrameDisplay* frame = ((ScriptFunction*)function)->GetEnvironment();
-        Field(Var)* moduleArrayBuffer = (Field(Var)*)frame->GetItem(0) + AsmJsModuleMemory::MemoryTableBeginOffset;
-        *moduleArrayBuffer = newArrayBuffer;
-        return JavascriptBoolean::ToVar(TRUE, scriptContext);
     }
 
 #if ENABLE_DEBUG_CONFIG_OPTIONS
@@ -338,6 +312,7 @@ namespace Js
                 *(double*)argDst = doubleVal;
                 argDst = argDst + sizeof(double);
             }
+#ifdef ENABLE_SIMDJS
             else if (info->GetArgType(i).isSIMD())
             {
                 AsmJsVarType argType = info->GetArgType(i);
@@ -429,6 +404,7 @@ namespace Js
                 *(AsmJsSIMDValue*)argDst = simdVal;
                 argDst = argDst + sizeof(AsmJsSIMDValue);
             }
+#endif // #ifdef ENABLE_SIMDJS
             else
             {
                 Assert(UNREACHED);
@@ -451,18 +427,7 @@ namespace Js
     int GetStackSizeForAsmJsUnboxing(ScriptFunction* func)
     {
         AsmJsFunctionInfo* info = func->GetFunctionBody()->GetAsmJsFunctionInfo();
-        int argSize = MachPtr;
-        for (ArgSlot i = 0; i < info->GetArgCount(); i++)
-        {
-            if (info->GetArgType(i).isSIMD())
-            {
-                argSize += sizeof(AsmJsSIMDValue);
-            }
-            else
-            {
-                argSize += MachPtr;
-            }
-        }
+        int argSize = info->GetArgByteSize() + MachPtr;
         argSize = ::Math::Align<int32>(argSize, 16);
 
         if (argSize < 32)
@@ -470,7 +435,7 @@ namespace Js
             argSize = 32; // convention is to always allocate spill space for rcx,rdx,r8,r9
         }
 
-        PROBE_STACK_CALL(func->GetScriptContext(), func, argSize);
+        PROBE_STACK_CALL(func->GetScriptContext(), func, argSize + Js::Constants::MinStackDefault);
         return argSize;
     }
 
@@ -512,6 +477,7 @@ namespace Js
             returnValue = JavascriptNumber::NewWithCheck(floatRetVal, scriptContext);
             break;
         }
+#ifdef ENABLE_SIMDJS
         case AsmJsRetType::Float32x4:
         {
             X86SIMDValue simdVal;
@@ -589,6 +555,7 @@ namespace Js
             returnValue = JavascriptSIMDUint8x16::New(&X86SIMDValue::ToSIMDValue(simdVal), scriptContext);
             break;
         }
+#endif // #ifdef ENABLE_SIMDJS
         default:
             Assume(UNREACHED);
         }
@@ -604,7 +571,7 @@ namespace Js
         FunctionBody* body = func->GetFunctionBody();
         AsmJsFunctionInfo* info = body->GetAsmJsFunctionInfo();
         int argSize = info->GetArgByteSize();
-        char* dst;
+        void* dst;
         Var returnValue = 0;
 
         // TODO (michhol): wasm, heap should not ever be detached
@@ -612,14 +579,10 @@ namespace Js
 
         argSize = ::Math::Align<int32>(argSize, 8);
         // Allocate stack space for args
+        PROBE_STACK_CALL(func->GetScriptContext(), func, argSize + Js::Constants::MinStackDefault);
 
-        __asm
-        {
-            sub esp, argSize
-            mov dst, esp
-        };
-
-        const void * asmJSEntryPoint = UnboxAsmJsArguments(func, args.Values + 1, dst - MachPtr, callInfo);
+        dst = _alloca(argSize);
+        const void * asmJSEntryPoint = UnboxAsmJsArguments(func, args.Values + 1, ((char*)dst) - MachPtr, callInfo);
 
         // make call and convert primitive type back to Var
         switch (info->GetReturnType().which())
@@ -704,6 +667,7 @@ namespace Js
             returnValue = JavascriptNumber::NewWithCheck((double)fval, func->GetScriptContext());
             break;
         }
+#ifdef ENABLE_SIMDJS
         case AsmJsRetType::Int32x4:
             AsmJsSIMDValue simdVal;
             simdVal.Zero();
@@ -865,6 +829,7 @@ namespace Js
             }
             returnValue = JavascriptSIMDUint8x16::New(&simdVal, func->GetScriptContext());
             break;
+#endif // #ifdef ENABLE_SIMDJS
         default:
             Assume(UNREACHED);
         }

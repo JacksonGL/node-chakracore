@@ -1,21 +1,19 @@
 'use strict';
 
 const common = require('../common');
-const assert = require('assert');
-
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
+
+const assert = require('assert');
+const tls = require('tls');
 
 // Ensure accessing ._external doesn't hit an assert in the accessor method.
-const tls = require('tls');
 {
   const pctx = tls.createSecureContext().context;
   const cctx = Object.create(pctx);
   assert.throws(() => cctx._external, common.engineSpecificMessage({
     v8: /incompatible receiver/,
-    chakracore: /Illegal invocation/}));
+    chakracore: /Illegal invocation/ }));
   pctx._external;
 }
 {
@@ -23,6 +21,6 @@ const tls = require('tls');
   const cctx = Object.create(pctx);
   assert.throws(() => cctx._external, common.engineSpecificMessage({
     v8: /incompatible receiver/,
-    chakracore: /Illegal invocation/}));
+    chakracore: /Illegal invocation/ }));
   pctx._external;
 }

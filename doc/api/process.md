@@ -528,7 +528,7 @@ running the `./configure` script.
 
 An example of the possible output looks like:
 
-<!-- eslint-disable -->
+<!-- eslint-skip -->
 ```js
 {
   target_defaults:
@@ -639,7 +639,7 @@ If the Node.js process was not spawned with an IPC channel,
 
 ## process.emitWarning(warning[, options])
 <!-- YAML
-added: REPLACEME
+added: 8.0.0
 -->
 
 * `warning` {string|Error} The warning to emit.
@@ -792,7 +792,7 @@ See environ(7).
 
 An example of this object looks like:
 
-<!-- eslint-disable -->
+<!-- eslint-skip -->
 ```js
 {
   TERM: 'xterm-256color',
@@ -1224,7 +1224,7 @@ console.log(process.memoryUsage());
 
 Will generate:
 
-<!-- eslint-disable -->
+<!-- eslint-skip -->
 ```js
 {
   rss: 4935680,
@@ -1396,7 +1396,7 @@ tarball.
 
 For example:
 
-<!-- eslint-disable -->
+<!-- eslint-skip -->
 ```js
 {
   name: 'node',
@@ -1635,7 +1635,7 @@ important ways:
    - TTYs (Terminals): *asynchronous* on Windows, *synchronous* on Unix
    - Pipes (and sockets): *synchronous* on Windows, *asynchronous* on Unix
 
-These behaviours are partly for historical reasons, as changing them would
+These behaviors are partly for historical reasons, as changing them would
 create backwards incompatibility, but they are also expected by some users.
 
 Synchronous writes avoid problems such as output written with `console.log()` or
@@ -1697,9 +1697,9 @@ added: v0.1.19
 * `mask` {number}
 
 The `process.umask()` method sets or returns the Node.js process's file mode
-creation mask. Child processes inherit the mask from the parent process. The old
-mask is return if the `mask` argument is given, otherwise returns the current
-mask.
+creation mask. Child processes inherit the mask from the parent process. Invoked
+without an argument, the current mask is returned, otherwise the umask is set to
+the argument value and the previous mask is returned.
 
 ```js
 const newmask = 0o022;
@@ -1758,7 +1758,7 @@ console.log(process.versions);
 
 Will generate an object similar to:
 
-<!-- eslint-disable -->
+<!-- eslint-skip -->
 ```js
 {
   http_parser: '2.3.0',
@@ -1819,6 +1819,8 @@ cases:
   value of the signal code.  This is a standard Unix practice, since
   exit codes are defined to be 7-bit integers, and signal exits set
   the high-order bit, and then contain the value of the signal code.
+  For example, signal `SIGABRT` has value `6`, so the expected exit
+  code will be `128` + `6`, or `134`.
 
 
 [`'exit'`]: #process_event_exit
@@ -1850,11 +1852,11 @@ cases:
 [Cluster]: cluster.html
 [Duplex]: stream.html#stream_duplex_and_transform_streams
 [LTS]: https://github.com/nodejs/LTS/
+[note on process I/O]: process.html#process_a_note_on_process_i_o
+[process_emit_warning]: #process_process_emitwarning_warning_type_code_ctor
+[process_warning]: #process_event_warning
 [Readable]: stream.html#stream_readable_streams
 [Signal Events]: #process_signal_events
 [Stream compatibility]: stream.html#stream_compatibility_with_older_node_js_versions
 [TTY]: tty.html#tty_tty
 [Writable]: stream.html#stream_writable_streams
-[note on process I/O]: process.html#process_a_note_on_process_i_o
-[process_emit_warning]: #process_process_emitwarning_warning_name_ctor
-[process_warning]: #process_event_warning

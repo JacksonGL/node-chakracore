@@ -29,16 +29,12 @@ String::Utf8Value::Utf8Value(Handle<v8::Value> obj)
     return;
   }
 
-  size_t len = 0;
-  CHAKRA_VERIFY(JsCopyString(*str, nullptr, 0, &len) == JsNoError);
-  char* buffer = reinterpret_cast<char*>(malloc(len + 1));
-  CHAKRA_VERIFY(buffer != nullptr);
-  size_t written = 0;
-  if (JsCopyString(*str, buffer, len, &written) == JsNoError) {
-    CHAKRA_ASSERT(len == written);
-    buffer[len] = '\0';
-    _str = buffer;
-    _length = static_cast<int>(len);
+  jsrt::StringUtf8 strUtf8;
+
+  if (strUtf8.From(*str) == JsNoError) {
+    _length = strUtf8.length();
+    _str = strUtf8.Detach();
+    _str[_length] = '\0';
   }
 }
 
@@ -79,11 +75,10 @@ int String::Length() const {
 
 int String::Utf8Length() const {
   jsrt::StringUtf8 str;
-  if (str.From((JsValueRef)this) != JsNoError) {
+  if (str.LengthFrom((JsValueRef)this) != JsNoError) {
     // error
     return 0;
   }
-
   return str.length();
 }
 
@@ -101,23 +96,15 @@ int String::Write(uint16_t *buffer, int start, int length, int options) const {
 
 int String::WriteOneByte(
     uint8_t* buffer, int start, int length, int options) const {
-  // The JSRT API only supports utf8 and utf16 encoded strings. In order to get
-  // 8 bit bytes from the string (i.e. Latin1) we can get the utf16 string and
-  // cast each character down to a uint8_t. This will only work for characters
-  // between U+0000 and U+00FF in the source string.
-  uint16_t* tmpBuffer = new uint16_t[length];
   size_t count = 0;
-  if (JsCopyStringUtf16((JsValueRef)this, start, length,
-                        tmpBuffer, &count) == JsNoError) {
-    for (size_t i = 0; i < count; i++) {
-      buffer[i] = (uint8_t)tmpBuffer[i];
-    }
-    
-    if (!(options & String::NO_NULL_TERMINATION)) {
-      buffer[count] = 0;
+  if (JsCopyStringOneByte((JsValueRef)this, start, length,
+                          reinterpret_cast<char *>(buffer),
+                          &count) == JsNoError) {
+    if (!(options & String::NO_NULL_TERMINATION) &&
+        (length == -1 || count < length)) {
+      buffer[count] = '\0';
     }
   }
-  delete[] tmpBuffer;
   return count;
 }
 
@@ -130,7 +117,7 @@ int String::WriteUtf8(
 
   size_t count = 0;
   if (JsCopyString((JsValueRef)this,
-                   buffer, length, &count) == JsNoError) {
+                   buffer, length, &count, nullptr) == JsNoError) {
     if (count < (unsigned)length && !(options & String::NO_NULL_TERMINATION)) {
       // Utf8 version count includes null terminator
       buffer[count++] = 0;

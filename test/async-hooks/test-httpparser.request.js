@@ -9,7 +9,6 @@ const { checkInvocations } = require('./hook-checks');
 const binding = process.binding('http_parser');
 const HTTPParser = binding.HTTPParser;
 
-const CRLF = '\r\n';
 const REQUEST = HTTPParser.REQUEST;
 
 const kOnHeadersComplete = HTTPParser.kOnHeadersComplete | 0;
@@ -19,19 +18,16 @@ const hooks = initHooks();
 hooks.enable();
 
 const request = Buffer.from(
-  'GET /hello HTTP/1.1' + CRLF + CRLF
+  'GET /hello HTTP/1.1\r\n\r\n'
 );
 
 const parser = new HTTPParser(REQUEST);
 const as = hooks.activitiesOfTypes('HTTPPARSER');
 const httpparser = as[0];
 
-assert.strictEqual(
-  as.length, 1,
-  '1 httpparser created synchronously when creating new httpparser');
-assert.strictEqual(typeof httpparser.uid, 'number', 'uid is a number');
-assert.strictEqual(typeof httpparser.triggerId,
-                   'number', 'triggerId is a number');
+assert.strictEqual(as.length, 1);
+assert.strictEqual(typeof httpparser.uid, 'number');
+assert.strictEqual(typeof httpparser.triggerAsyncId, 'number');
 checkInvocations(httpparser, { init: 1 }, 'when created new Httphttpparser');
 
 parser[kOnHeadersComplete] = common.mustCall(onheadersComplete);

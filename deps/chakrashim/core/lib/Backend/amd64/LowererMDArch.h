@@ -88,7 +88,6 @@ public:
     IR::Instr *         LowerCall(IR::Instr * callInstr, uint32 argCount);
     IR::Instr *         LowerCallI(IR::Instr * callInstr, ushort callFlags, bool isHelper = false, IR::Instr * insertBeforeInstrForCFG = nullptr);
     IR::Instr *         LowerCallIDynamic(IR::Instr * callInstr, IR::Instr* saveThis, IR::Opnd* argsLengthOpnd, ushort callFlags, IR::Instr * insertBeforeInstrForCFG = nullptr);
-    IR::Instr *         LowerCallPut(IR::Instr * callInstr);
     IR::Instr *         LowerStartCall(IR::Instr * instr);
     IR::Instr *         LowerAsmJsCallI(IR::Instr * callInstr);
     IR::Instr *         LowerAsmJsCallE(IR::Instr * callInstr);
@@ -112,7 +111,6 @@ public:
     IR::Instr *         LowerExitInstrAsmJs(IR::ExitInstr * exitInstr);
     IR::Instr *         LowerInt64Assign(IR::Instr * instr);
     static void         EmitInt4Instr(IR::Instr *instr, bool signExtend = false);
-    static void         EmitPtrInstr(IR::Instr *instr);
     void                EmitLoadVar(IR::Instr *instrLoad, bool isFromUint32 = false, bool isHelper = false);
     void                EmitIntToFloat(IR::Opnd *dst, IR::Opnd *src, IR::Instr *instrInsert);
     void                EmitUIntToFloat(IR::Opnd *dst, IR::Opnd *src, IR::Instr *instrInsert);

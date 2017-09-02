@@ -29,9 +29,11 @@
       <!-- ======== sources.inc ======== -->
       <!-- generates SAL annotations for our interface -->
       <AdditionalOptions>%(AdditionalOptions) -sal_local</AdditionalOptions>
+      
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);WINVER=$(Win32_WinNTVersion)</PreprocessorDefinitions>
     </Midl>
     <ClCompile>
-      <PreprocessorDefinitions>%(PreprocessorDefinitions);_CHAKRACOREBUILD;NOMINMAX;USE_EDGEMODE_JSRT</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions);NOMINMAX;USE_EDGEMODE_JSRT</PreprocessorDefinitions>
       <!-- Some of our STDMETHOD can throw
            TODO: Code review STDMETHOD and separate out API that can throw and those that can't -->
       <PreprocessorDefinitions>%(PreprocessorDefinitions);COM_STDMETHOD_CAN_THROW</PreprocessorDefinitions>
@@ -105,13 +107,20 @@
 
       <MinimumRequiredVersion Condition="'$(NtTargetVersion)'=='$(NtTargetVersion_Win7)'" >6.1</MinimumRequiredVersion>
       <MinimumRequiredVersion Condition="'$(NtTargetVersion)'=='$(NtTargetVersion_Win8)'" >6.2</MinimumRequiredVersion>
+      <MinimumRequiredVersion Condition="'$(NtTargetVersion)'=='$(NtTargetVersion_WinBlue)'" >6.3</MinimumRequiredVersion>
       <MinimumRequiredVersion Condition="'$(NtTargetVersion)'=='$(NtTargetVersion_Win10)'" >10.00</MinimumRequiredVersion>
 
       <!-- Always set the checksum -->
       <AdditionalOptions>%(AdditionalOptions) /release</AdditionalOptions>
+      <!-- Ignore Linker warning: This object file does not define any previously undefined public symbols -->
+      <AdditionalOptions>%(AdditionalOptions) /ignore:4221</AdditionalOptions>
       <!-- ======== For Code Covearge ======== -->
       <AdditionalOptions Condition="'$(ENABLE_CODECOVERAGE)'=='true'">%(AdditionalOptions) /DEBUGTYPE:CV,FIXUP</AdditionalOptions>
     </Link>
+    <Lib>
+      <!-- Ignore Linker warning: This object file does not define any previously undefined public symbols -->
+      <AdditionalOptions>%(AdditionalOptions) /ignore:4221</AdditionalOptions>
+    </Lib>
   </ItemDefinitionGroup>
 
   <!--Optimization flags-->
@@ -128,7 +137,7 @@
   </ItemDefinitionGroup>
   
     <!-- chk build flags -->  
-  <ItemDefinitionGroup Condition="'$(OptimizedBuild)'!='true'">
+  <ItemDefinitionGroup Condition="'$(DebugBuild)'=='true'">
     <ClCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);_DEBUG;DBG;DBG_DUMP</PreprocessorDefinitions>
     </ClCompile>
@@ -140,7 +149,7 @@
     </Midl>
   </ItemDefinitionGroup>
   <!-- fre and fretest build flags -->
-  <ItemDefinitionGroup Condition="'$(OptimizedBuild)'=='true'">
+  <ItemDefinitionGroup Condition="'$(DebugBuild)'!='true'">
     <ClCompile>
       <PreprocessorDefinitions>%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
       <PreprocessorDefinitions Condition="'$(Configuration)'=='Test'">%(PreprocessorDefinitions);ENABLE_DEBUG_CONFIG_OPTIONS=1</PreprocessorDefinitions>

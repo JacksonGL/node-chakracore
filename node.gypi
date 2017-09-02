@@ -52,6 +52,10 @@
         'NODE_RELEASE_URLBASE="<(node_release_urlbase)"',
       ]
     }],
+    [
+      'debug_http2==1', {
+      'defines': [ 'NODE_DEBUG_HTTP2=1' ]
+    }],
     [ 'v8_enable_i18n_support==1', {
       'defines': [ 'NODE_HAVE_I18N_SUPPORT=1' ],
       'dependencies': [
@@ -245,6 +249,16 @@
       ],
       'dependencies': [
         'deps/chakrashim/chakrashim.gyp:chakrashim'
+      ],
+      'conditions': [
+        # -force_load is not applicable for the static library
+        [ 'node_target_type!="static_library"', {
+          'xcode_settings': {
+            'OTHER_LDFLAGS': [
+              '-Wl,-force_load,<(CHAKRASHIM_BASE)',
+            ],
+          },
+        }],
       ],
     }],
     [ 'node_shared_zlib=="false"', {

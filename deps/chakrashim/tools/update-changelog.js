@@ -79,8 +79,26 @@ function loadGitReleaseTags() {
   );
 }
 
+function filterReleaseTags(releaseTag) {
+  var branches = git_sync(['branch', '--contains', releaseTag.name]);
+  // If tag is present in current branch, then it is a valid tag to consider
+  return branches.split(/\n/).some((x) => {return x.startsWith('* ');});
+}
+
+function compareReleasesByDate(a, b) {
+  if (a.date < b.date) {
+    return -1;
+  } else if (a.date > b.date) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
 // Match last release, figure out next release and update ranges
 function matchReleases(releaseTags, lastRelease) {
+  releaseTags.sort(compareReleasesByDate);
+  releaseTags = releaseTags.filter(filterReleaseTags);
   var ver;
   command_pipe(process.argv[0], ['--version'],
   line => {
@@ -113,6 +131,9 @@ function matchReleases(releaseTags, lastRelease) {
           'Please fetch release tags (git fetch --tags ...)');
       }
       releaseTags.splice(0, lastIndex);
+    } else {
+      // Don't look at commits older than `47000c74f4~1`
+      releaseTags.splice(0, 0, { commit: "47000c74f4~1" });
     }
 
     // Last range to be updated
@@ -141,14 +162,17 @@ function updateChangelogs(releaseTags) {
       }
     },
     () => {
-      var output = '## ' + next.date + ", " + next.name +
-        '\n\n### Commits\n\n';
-      commits.forEach(c => {
-        const sha = c.commit;
-        output += `* [[\`${sha}\`] (${commitUrl + sha})] - ${c.subject}\n`;
-      });
+      if (commits.length > 0) {
+        var output = '## ' + next.date + ", " + next.name +
+          '\n\n### Commits\n\n';
+        commits.forEach(c => {
+          const sha = c.commit;
+          output += `* [[\`${sha}\`](${commitUrl + sha})] - ${c.subject}\n`;
+        });
 
-      changeLog.splice(2, 0, output);
+        changeLog.splice(2, 0, output);
+      }
+
       updateChangelogs(releaseTags);
     });
   } else {
@@ -177,6 +201,16 @@ function pipe(proc, onLine) {
   });
 
   return proc;
+}
+
+function command_sync(command, args) {
+   /* make buffer size 500KB for git sync commands */
+  var x = child_process.spawnSync(command, args, {maxBuffer : 500 * 1024});
+  return x.status == 0 ? x.stdout.toString(): x.error.toString() + "\n" + x.stderr.toString();
+}
+
+function git_sync(args) {
+  return command_sync('git', args);
 }
 
 function command_pipe(command, args, onLine, done) {

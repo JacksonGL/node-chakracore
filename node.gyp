@@ -1,6 +1,7 @@
 {
   'variables': {
     'v8_use_snapshot%': 'false',
+    'v8_trace_maps%': 0,
     'node_use_dtrace%': 'false',
     'node_use_lttng%': 'false',
     'node_use_etw%': 'false',
@@ -37,6 +38,7 @@
       'lib/events.js',
       'lib/fs.js',
       'lib/http.js',
+      'lib/http2.js',
       'lib/_http_agent.js',
       'lib/_http_client.js',
       'lib/_http_common.js',
@@ -49,6 +51,7 @@
       'lib/net.js',
       'lib/os.js',
       'lib/path.js',
+      'lib/perf_hooks.js',
       'lib/process.js',
       'lib/punycode.js',
       'lib/querystring.js',
@@ -83,13 +86,16 @@
       'lib/internal/cluster/shared_handle.js',
       'lib/internal/cluster/utils.js',
       'lib/internal/cluster/worker.js',
+      'lib/internal/encoding.js',
       'lib/internal/errors.js',
       'lib/internal/freelist.js',
       'lib/internal/fs.js',
       'lib/internal/http.js',
+      'lib/internal/inspector_async_hook.js',
       'lib/internal/linkedlist.js',
       'lib/internal/net.js',
       'lib/internal/module.js',
+      'lib/internal/os.js',
       'lib/internal/process/next_tick.js',
       'lib/internal/process/promises.js',
       'lib/internal/process/stdio.js',
@@ -103,6 +109,9 @@
       'lib/internal/test/unicode.js',
       'lib/internal/url.js',
       'lib/internal/util.js',
+      'lib/internal/http2/core.js',
+      'lib/internal/http2/compat.js',
+      'lib/internal/http2/util.js',
       'lib/internal/v8_prof_polyfill.js',
       'lib/internal/v8_prof_processor.js',
       'lib/internal/streams/lazy_transform.js',
@@ -146,6 +155,7 @@
 
       'dependencies': [
         'node_js2c#host',
+        'deps/nghttp2/nghttp2.gyp:nghttp2'
       ],
 
       'includes': [
@@ -156,7 +166,8 @@
         'src',
         'tools/msvs/genfiles',
         'deps/uv/src/ares',
-        '<(SHARED_INTERMEDIATE_DIR)',
+        '<(SHARED_INTERMEDIATE_DIR)', # for node_natives.h
+        'deps/nghttp2/lib/includes'
       ],
 
       'sources': [
@@ -175,10 +186,12 @@
         'src/node_contextify.cc',
         'src/node_debug_options.cc',
         'src/node_file.cc',
+        'src/node_http2.cc',
         'src/node_http_parser.cc',
         'src/node_main.cc',
         'src/node_os.cc',
-        'src/node_revert.cc',
+        'src/node_platform.cc',
+        'src/node_perf.cc',
         'src/node_serdes.cc',
         'src/node_url.cc',
         'src/node_util.cc',
@@ -219,12 +232,18 @@
         'src/node.h',
         'src/node_api.h',
         'src/node_api_types.h',
+        'src/node_http2_core.h',
+        'src/node_http2_core-inl.h',
         'src/node_buffer.h',
         'src/node_constants.h',
         'src/node_debug_options.h',
+        'src/node_http2.h',
         'src/node_internals.h',
         'src/node_javascript.h',
         'src/node_mutex.h',
+        'src/node_platform.h',
+        'src/node_perf.h',
+        'src/node_perf_common.h',
         'src/node_root_certs.h',
         'src/node_version.h',
         'src/node_watchdog.h',
@@ -245,7 +264,6 @@
         'src/tracing/node_trace_buffer.h',
         'src/tracing/node_trace_writer.h',
         'src/tracing/trace_event.h'
-        'src/tree.h',
         'src/util.h',
         'src/util-inl.h',
         'deps/http_parser/http_parser.h',
@@ -264,12 +282,21 @@
         'NODE_WANT_INTERNALS=1',
         # Warn when using deprecated V8 APIs.
         'V8_DEPRECATION_WARNINGS=1',
+        # We're using the nghttp2 static lib
+        'NGHTTP2_STATICLIB'
       ],
 
       'conditions': [
         [ 'node_engine=="chakracore"', {
           'sources': [
             'src/node_api_jsrt.cc',
+          ],
+          'conditions': [
+            [ 'OS!="win" and chakracore_use_lto=="true"', {
+              'ldflags': [
+                '-flto',
+              ],
+            }],
           ],
         }, {
           'sources': [
@@ -535,7 +562,7 @@
                 '<(OBJ_DIR)/node/src/node_dtrace_ustack.o'
               ],
               'conditions': [
-                [ 'target_arch=="ia32"', {
+                [ 'target_arch=="ia32" or target_arch=="arm"', {
                   'action': [
                     'dtrace', '-32', '-I<(SHARED_INTERMEDIATE_DIR)', '-Isrc',
                     '-C', '-G', '-s', 'src/v8ustack.d', '-o', '<@(_outputs)',
@@ -636,39 +663,11 @@
         '<(SHARED_INTERMEDIATE_DIR)', # for node_natives.h
       ],
 
-      'libraries': [
-        '<(OBJ_GEN_PATH)<(OBJ_SEPARATOR)node_javascript.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node_debug_options.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)async-wrap.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)env.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node_buffer.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node_i18n.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node_url.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)util.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)string_bytes.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)string_search.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)stream_base.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node_constants.<(OBJ_SUFFIX)',
-        '<(OBJ_PATH)<(OBJ_SEPARATOR)node_revert.<(OBJ_SUFFIX)',
-        '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)agent.<(OBJ_SUFFIX)',
-        '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)node_trace_buffer.<(OBJ_SUFFIX)',
-        '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)node_trace_writer.<(OBJ_SUFFIX)',
-        '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)trace_event.<(OBJ_SUFFIX)',
-      ],
-
-      'defines': [
-        # gtest's ASSERT macros conflict with our own.
-        'GTEST_DONT_DEFINE_ASSERT_EQ=1',
-        'GTEST_DONT_DEFINE_ASSERT_GE=1',
-        'GTEST_DONT_DEFINE_ASSERT_GT=1',
-        'GTEST_DONT_DEFINE_ASSERT_LE=1',
-        'GTEST_DONT_DEFINE_ASSERT_LT=1',
-        'GTEST_DONT_DEFINE_ASSERT_NE=1',
-        'NODE_WANT_INTERNALS=1',
-      ],
+      'defines': [ 'NODE_WANT_INTERNALS=1' ],
 
       'sources': [
+        'src/node_platform.cc',
+        'src/node_platform.h',
         'test/cctest/test_base64.cc',
         'test/cctest/test_environment.cc',
         'test/cctest/test_util.cc',
@@ -698,7 +697,36 @@
           ],
           'sources!': [
             'test/cctest/test_environment.cc', # TODO: Enable these test for node-chakracore
-          ]
+          ],
+          'conditions': [
+            [ 'OS!="win" and chakracore_use_lto=="true"', {
+              'ldflags': [
+                '-flto',
+              ],
+            }],
+          ],
+        }],
+        ['node_target_type!="static_library"', {
+          'libraries': [
+	    '<(OBJ_GEN_PATH)<(OBJ_SEPARATOR)node_javascript.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node_debug_options.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)async-wrap.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)env.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node_buffer.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node_i18n.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node_perf.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node_url.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)util.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)string_bytes.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)string_search.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)stream_base.<(OBJ_SUFFIX)',
+            '<(OBJ_PATH)<(OBJ_SEPARATOR)node_constants.<(OBJ_SUFFIX)',
+            '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)agent.<(OBJ_SUFFIX)',
+            '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)node_trace_buffer.<(OBJ_SUFFIX)',
+            '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)node_trace_writer.<(OBJ_SUFFIX)',
+            '<(OBJ_TRACING_PATH)<(OBJ_SEPARATOR)trace_event.<(OBJ_SUFFIX)',
+          ],
         }],
         ['v8_enable_inspector==1', {
           'sources': [

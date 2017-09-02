@@ -1,18 +1,18 @@
 'use strict';
 
 const common = require('../common');
+if (!common.hasCrypto)
+  common.skip('missing crypto');
+
 const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const tls = require('tls');
+
 const tick = require('./tick');
 const initHooks = require('./init-hooks');
-const fs = require('fs');
 const { checkInvocations } = require('./hook-checks');
 
-if (!common.hasCrypto) {
-  common.skip('missing crypto');
-  return;
-}
-
-const tls = require('tls');
 const hooks = initHooks();
 hooks.enable();
 
@@ -21,8 +21,8 @@ hooks.enable();
 //
 const server = tls
   .createServer({
-    cert: fs.readFileSync(common.fixturesDir + '/test_cert.pem'),
-    key: fs.readFileSync(common.fixturesDir + '/test_key.pem')
+    cert: fs.readFileSync(path.join(common.fixturesDir, 'test_cert.pem')),
+    key: fs.readFileSync(path.join(common.fixturesDir, 'test_key.pem'))
   })
   .on('listening', common.mustCall(onlistening))
   .on('secureConnection', common.mustCall(onsecureConnection))
@@ -38,12 +38,12 @@ function onlistening() {
     .on('secureConnect', common.mustCall(onsecureConnect));
 
   const as = hooks.activitiesOfTypes('TLSWRAP');
-  assert.strictEqual(as.length, 1, 'one TLSWRAP when client connecting');
+  assert.strictEqual(as.length, 1);
   svr = as[0];
 
-  assert.strictEqual(svr.type, 'TLSWRAP', 'tls wrap');
-  assert.strictEqual(typeof svr.uid, 'number', 'uid is a number');
-  assert.strictEqual(typeof svr.triggerId, 'number', 'triggerId is a number');
+  assert.strictEqual(svr.type, 'TLSWRAP');
+  assert.strictEqual(typeof svr.uid, 'number');
+  assert.strictEqual(typeof svr.triggerAsyncId, 'number');
   checkInvocations(svr, { init: 1 }, 'server: when client connecting');
 }
 
@@ -52,13 +52,11 @@ function onsecureConnection() {
   // Server received client connection
   //
   const as = hooks.activitiesOfTypes('TLSWRAP');
-  assert.strictEqual(as.length, 2,
-                     'two TLSWRAPs when server has secure connection');
+  assert.strictEqual(as.length, 2);
   client = as[1];
-  assert.strictEqual(client.type, 'TLSWRAP', 'tls wrap');
-  assert.strictEqual(typeof client.uid, 'number', 'uid is a number');
-  assert.strictEqual(typeof client.triggerId, 'number',
-                     'triggerId is a number');
+  assert.strictEqual(client.type, 'TLSWRAP');
+  assert.strictEqual(typeof client.uid, 'number');
+  assert.strictEqual(typeof client.triggerAsyncId, 'number');
 
   // TODO(thlorenz) which callback did the server wrap execute that already
   // finished as well?

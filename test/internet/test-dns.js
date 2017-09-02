@@ -366,7 +366,7 @@ TEST(function test_resolveTxt(done) {
     assert.ifError(err);
     assert.strictEqual(records.length, 1);
     assert.ok(util.isArray(records[0]));
-    assert.strictEqual(records[0][0].indexOf('v=spf1'), 0);
+    assert(records[0][0].startsWith('v=spf1'));
     done();
   });
 
@@ -388,12 +388,12 @@ TEST(function test_resolveTxt_failure(done) {
 
 
 TEST(function test_lookup_failure(done) {
-  const req = dns.lookup('does.not.exist', 4, function(err, ip, family) {
+  const req = dns.lookup('this.hostname.is.invalid', 4, (err, ip, family) => {
     assert.ok(err instanceof Error);
     assert.strictEqual(err.errno, dns.NOTFOUND);
     assert.strictEqual(err.errno, 'ENOTFOUND');
     assert.ok(!/ENOENT/.test(err.message));
-    assert.ok(/does\.not\.exist/.test(err.message));
+    assert.ok(err.message.includes('this.hostname.is.invalid'));
 
     done();
   });
@@ -403,22 +403,26 @@ TEST(function test_lookup_failure(done) {
 
 
 TEST(function test_lookup_ip_all(done) {
-  const req = dns.lookup('127.0.0.1', {all: true}, function(err, ips, family) {
-    assert.ifError(err);
-    assert.ok(Array.isArray(ips));
-    assert.ok(ips.length > 0);
-    assert.strictEqual(ips[0].address, '127.0.0.1');
-    assert.strictEqual(ips[0].family, 4);
+  const req = dns.lookup(
+    '127.0.0.1',
+    { all: true },
+    function(err, ips, family) {
+      assert.ifError(err);
+      assert.ok(Array.isArray(ips));
+      assert.ok(ips.length > 0);
+      assert.strictEqual(ips[0].address, '127.0.0.1');
+      assert.strictEqual(ips[0].family, 4);
 
-    done();
-  });
+      done();
+    }
+  );
 
   checkWrap(req);
 });
 
 
 TEST(function test_lookup_ip_all_promise(done) {
-  const req = util.promisify(dns.lookup)('127.0.0.1', {all: true})
+  const req = util.promisify(dns.lookup)('127.0.0.1', { all: true })
     .then(function(ips) {
       assert.ok(Array.isArray(ips));
       assert.ok(ips.length > 0);
@@ -444,7 +448,7 @@ TEST(function test_lookup_ip_promise(done) {
 
 
 TEST(function test_lookup_null_all(done) {
-  const req = dns.lookup(null, {all: true}, function(err, ips, family) {
+  const req = dns.lookup(null, { all: true }, function(err, ips, family) {
     assert.ifError(err);
     assert.ok(Array.isArray(ips));
     assert.strictEqual(ips.length, 0);
@@ -457,7 +461,7 @@ TEST(function test_lookup_null_all(done) {
 
 
 TEST(function test_lookup_all_mixed(done) {
-  const req = dns.lookup('www.google.com', {all: true}, function(err, ips) {
+  const req = dns.lookup('www.google.com', { all: true }, function(err, ips) {
     assert.ifError(err);
     assert.ok(Array.isArray(ips));
     assert.ok(ips.length > 0);
@@ -492,11 +496,12 @@ TEST(function test_lookupservice_invalid(done) {
 
 
 TEST(function test_reverse_failure(done) {
-  const req = dns.reverse('0.0.0.0', function(err) {
+  // 203.0.113.0/24 are addresses reserved for (RFC) documentation use only
+  const req = dns.reverse('203.0.113.0', function(err) {
     assert(err instanceof Error);
     assert.strictEqual(err.code, 'ENOTFOUND');  // Silly error code...
-    assert.strictEqual(err.hostname, '0.0.0.0');
-    assert.ok(/0\.0\.0\.0/.test(err.message));
+    assert.strictEqual(err.hostname, '203.0.113.0');
+    assert.ok(/203\.0\.113\.0/.test(err.message));
 
     done();
   });
@@ -506,11 +511,11 @@ TEST(function test_reverse_failure(done) {
 
 
 TEST(function test_lookup_failure(done) {
-  const req = dns.lookup('nosuchhostimsure', function(err) {
+  const req = dns.lookup('this.hostname.is.invalid', (err) => {
     assert(err instanceof Error);
     assert.strictEqual(err.code, 'ENOTFOUND');  // Silly error code...
-    assert.strictEqual(err.hostname, 'nosuchhostimsure');
-    assert.ok(/nosuchhostimsure/.test(err.message));
+    assert.strictEqual(err.hostname, 'this.hostname.is.invalid');
+    assert.ok(err.message.includes('this.hostname.is.invalid'));
 
     done();
   });
@@ -520,7 +525,7 @@ TEST(function test_lookup_failure(done) {
 
 
 TEST(function test_resolve_failure(done) {
-  const req = dns.resolve4('nosuchhostimsure', function(err) {
+  const req = dns.resolve4('this.hostname.is.invalid', (err) => {
     assert(err instanceof Error);
 
     switch (err.code) {
@@ -532,8 +537,8 @@ TEST(function test_resolve_failure(done) {
         break;
     }
 
-    assert.strictEqual(err.hostname, 'nosuchhostimsure');
-    assert.ok(/nosuchhostimsure/.test(err.message));
+    assert.strictEqual(err.hostname, 'this.hostname.is.invalid');
+    assert.ok(err.message.includes('this.hostname.is.invalid'));
 
     done();
   });
@@ -548,7 +553,7 @@ console.log('looking up nodejs.org...');
 
 const cares = process.binding('cares_wrap');
 const req = new cares.GetAddrInfoReqWrap();
-cares.getaddrinfo(req, 'nodejs.org', 4);
+cares.getaddrinfo(req, 'nodejs.org', 4, /* hints */ 0, /* verbatim */ true);
 
 req.oncomplete = function(err, domains) {
   assert.strictEqual(err, 0);

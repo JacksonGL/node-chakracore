@@ -20,9 +20,11 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
+// Flags: --expose-internals
 const common = require('../common');
 const assert = require('assert');
 const util = require('util');
+const errors = require('internal/errors');
 const binding = process.binding('util');
 const context = require('vm').runInNewContext;
 
@@ -98,13 +100,13 @@ assert.strictEqual(false, util.isBuffer('foo'));
 assert.strictEqual(true, util.isBuffer(Buffer.from('foo')));
 
 // _extend
-assert.deepStrictEqual(util._extend({a: 1}), {a: 1});
-assert.deepStrictEqual(util._extend({a: 1}, []), {a: 1});
-assert.deepStrictEqual(util._extend({a: 1}, null), {a: 1});
-assert.deepStrictEqual(util._extend({a: 1}, true), {a: 1});
-assert.deepStrictEqual(util._extend({a: 1}, false), {a: 1});
-assert.deepStrictEqual(util._extend({a: 1}, {b: 2}), {a: 1, b: 2});
-assert.deepStrictEqual(util._extend({a: 1, b: 2}, {b: 3}), {a: 1, b: 3});
+assert.deepStrictEqual(util._extend({ a: 1 }), { a: 1 });
+assert.deepStrictEqual(util._extend({ a: 1 }, []), { a: 1 });
+assert.deepStrictEqual(util._extend({ a: 1 }, null), { a: 1 });
+assert.deepStrictEqual(util._extend({ a: 1 }, true), { a: 1 });
+assert.deepStrictEqual(util._extend({ a: 1 }, false), { a: 1 });
+assert.deepStrictEqual(util._extend({ a: 1 }, { b: 2 }), { a: 1, b: 2 });
+assert.deepStrictEqual(util._extend({ a: 1, b: 2 }, { b: 3 }), { a: 1, b: 3 });
 
 // deprecated
 assert.strictEqual(util.isBoolean(true), true);
@@ -167,4 +169,8 @@ util.error('test');
   assert.strictEqual(binding.isNativeError([]), false);
   assert.strictEqual(binding.isNativeError(Object.create(Error.prototype)),
                      false);
+  assert.strictEqual(
+    binding.isNativeError(new errors.Error('ERR_IPC_CHANNEL_CLOSED')),
+    true
+  );
 }

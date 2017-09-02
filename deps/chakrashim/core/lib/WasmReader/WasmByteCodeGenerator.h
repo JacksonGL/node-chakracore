@@ -129,9 +129,21 @@ namespace Wasm
         Js::ByteCodeLabel label;
         bool DidYield() const { return HasYield() && yieldInfo->didYield; }
         bool HasYield() const { return yieldInfo != nullptr; }
+        bool IsEquivalent(const BlockInfo& other) const
+        {
+            if (HasYield() != other.HasYield())
+            {
+                return false;
+            }
+            if (HasYield() && yieldInfo->info.type != other.yieldInfo->info.type)
+            {
+                return false;
+            }
+            return true;
+        }
     };
 
-    typedef JsUtil::BaseDictionary<uint, LPCUTF8, ArenaAllocator> WasmExportDictionary;
+    typedef JsUtil::BaseDictionary<uint32, LPCUTF8, ArenaAllocator> WasmExportDictionary;
 
     struct WasmReaderInfo
     {
@@ -193,9 +205,15 @@ namespace Wasm
         EmitInfo EmitSetLocal(bool tee);
         void EmitReturnExpr(EmitInfo* explicitRetInfo = nullptr);
         EmitInfo EmitSelect();
+        template<typename WriteFn>
+        void WriteTypeStack(WriteFn fn) const;
+        uint32 WriteTypeStackToString(_Out_writes_(maxlen) char16* out, uint32 maxlen) const;
 #if DBG_DUMP
-        void PrintOpBegin(WasmOp op) const;
-        void PrintOpEnd() const;
+        uint32 opId = 0;
+        uint32 lastOpId = 1;
+        void PrintOpBegin(WasmOp op);
+        void PrintTypeStack() const;
+        void PrintOpEnd();
 #endif
         void EmitBr();
         EmitInfo EmitBrIf();
@@ -215,10 +233,7 @@ namespace Wasm
         EmitInfo PopLabel(Js::ByteCodeLabel labelValidation);
         BlockInfo PushLabel(Js::ByteCodeLabel label, bool addBlockYieldInfo = true);
         void YieldToBlock(BlockInfo blockInfo, EmitInfo expr);
-        void YieldToBlock(uint relativeDepth, EmitInfo expr);
-        bool ShouldYieldToBlock(uint relativeDepth) const;
-        BlockInfo GetBlockInfo(uint relativeDepth) const;
-        Js::ByteCodeLabel GetLabel(uint relativeDepth);
+        BlockInfo GetBlockInfo(uint32 relativeDepth) const;
 
         Js::OpCodeAsmJs GetLoadOp(WasmTypes::WasmType type);
         Js::OpCodeAsmJs GetReturnOp(WasmTypes::WasmType type);
@@ -232,7 +247,7 @@ namespace Wasm
         void ExitEvalStackScope();
         void SetUnreachableState(bool isUnreachable);
         bool IsUnreachable() const { return this->isUnreachable; }
-        void SetUsesMemory(uint memoryIndex);
+        void SetUsesMemory(uint32 memoryIndex);
 
         Js::FunctionBody* GetFunctionBody() const { return m_funcInfo->GetBody(); }
         WasmReaderBase* GetReader() const;
@@ -247,7 +262,7 @@ namespace Wasm
         WasmFunctionInfo* m_funcInfo;
         Js::WebAssemblyModule* m_module;
 
-        uint m_maxArgOutDepth;
+        uint32 m_maxArgOutDepth;
 
         Js::IWasmByteCodeWriter* m_writer;
         Js::IWasmByteCodeWriter* m_emptyWriter;

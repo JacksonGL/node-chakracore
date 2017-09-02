@@ -1,8 +1,10 @@
 @include documentation
 @include synopsis
 @include assert
+@include async_hooks
 @include buffer
 @include addons
+@include n-api
 @include child_process
 @include cluster
 @include cli
@@ -17,12 +19,15 @@
 @include fs
 @include globals
 @include http
+@include http2
 @include https
 @include inspector
+@include intl
 @include modules
 @include net
 @include os
 @include path
+@include perf_hooks
 @include process
 @include punycode
 @include querystring

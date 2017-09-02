@@ -1,4 +1,4 @@
-# Node.js v4 ChangeLog
+# Node.js 4 ChangeLog
 
 <table>
 <tr>
@@ -7,6 +7,7 @@
 </tr>
 <tr>
 <td valign="top">
+<a href="#4.8.4">4.8.4</a><br/>
 <a href="#4.8.3">4.8.3</a><br/>
 <a href="#4.8.2">4.8.2</a><br/>
 <a href="#4.8.1">4.8.1</a><br/>
@@ -48,6 +49,7 @@
 </table>
 
 * Other Versions
+  * [8.x](CHANGELOG_V8.md)
   * [7.x](CHANGELOG_V7.md)
   * [6.x](CHANGELOG_V6.md)
   * [5.x](CHANGELOG_V5.md)
@@ -60,6 +62,26 @@
 *Note*: Node.js v4 is covered by the
 [Node.js Long Term Support Plan](https://github.com/nodejs/LTS) and
 will be supported actively until April 2017 and maintained until April 2018.
+
+<a id="4.8.4"></a>
+## 2017-07-11, Version 4.8.4 'Argon' (Maintenance), @MylesBorins
+
+This is a security release. All Node.js users should consult the security release summary at https://nodejs.org/en/blog/vulnerability/july-2017-security-releases/ for details on patched vulnerabilities.
+
+### Notable Changes
+
+* **build**:
+  - Disable V8 snapshots - The hashseed embedded in the snapshot is currently the same for all runs of the binary. This opens node up to collision attacks which could result in a Denial of Service. We have temporarily disabled snapshots until a more robust solution is found (Ali Ijaz Sheikh)
+* **deps**:
+  - CVE-2017-1000381 - The c-ares function ares_parse_naptr_reply(), which is used for parsing NAPTR responses, could be triggered to read memory outside of the given input buffer if the passed in DNS response packet was crafted in a particular way. This patch checks that there is enough data for the required elements of an NAPTR record (2 int16, 3 bytes for string lengths) before processing a record. (David Drysdale)
+
+### Commits
+
+* [[`9d51bdc9d4`](https://github.com/nodejs/node/commit/9d51bdc9d4)] - **build**: disable V8 snapshots (Ali Ijaz Sheikh) [nodejs/node-private#84](https://github.com/nodejs/node-private/pull/84)
+* [[`80fe2662e4`](https://github.com/nodejs/node/commit/80fe2662e4)] - **deps**: cherry-pick 9478908a49 from cares upstream (David Drysdale) [nodejs/node-private#88](https://github.com/nodejs/node-private/pull/88)
+* [[`d6969a717f`](https://github.com/nodejs/node/commit/d6969a717f)] - **http**: use Buffer.from to avoid Buffer(num) call (Сковорода Никита Андреевич) [nodejs/node-private#83](https://github.com/nodejs/node-private/pull/83)
+* [[`58a8f150e5`](https://github.com/nodejs/node/commit/58a8f150e5)] - **test**: verify hash seed uniqueness (Ali Ijaz Sheikh) [nodejs/node-private#84](https://github.com/nodejs/node-private/pull/84)
+
 
 <a id="4.8.3"></a>
 ## 2017-05-02, Version 4.8.3 'Argon' (Maintenance), @MylesBorins
@@ -683,7 +705,7 @@ Notable SEMVER-PATCH changes include:
 
 * **build**:
   - introduce the configure --shared option for embedders (sxa555) [#6994](https://github.com/nodejs/node/pull/6994)
-* **gtest**: the test reporter now outputs tap comments as yamlish (Johan Bergström) [#9262](https://github.com/nodejs/node/pull/9262)  
+* **gtest**: the test reporter now outputs tap comments as yamlish (Johan Bergström) [#9262](https://github.com/nodejs/node/pull/9262)
 * **src**: node no longer aborts when c-ares initialization fails (Ben Noordhuis) [#8710](https://github.com/nodejs/node/pull/8710)
 * **tls**: fix memory leak when writing data to TLSWrap instance during handshake (Fedor Indutny) [#9586](https://github.com/nodejs/node/pull/9586)
 

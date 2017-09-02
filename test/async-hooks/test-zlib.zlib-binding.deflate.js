@@ -14,11 +14,11 @@ const constants = process.binding('constants').zlib;
 const handle = new Zlib(constants.DEFLATE);
 
 const as = hooks.activitiesOfTypes('ZLIB');
-assert.strictEqual(as.length, 1, 'one zlib on when created handle');
+assert.strictEqual(as.length, 1);
 const hdl = as[0];
-assert.strictEqual(hdl.type, 'ZLIB', 'zlib');
-assert.strictEqual(typeof hdl.uid, 'number', 'uid is a number');
-assert.strictEqual(typeof hdl.triggerId, 'number', 'triggerId is a number');
+assert.strictEqual(hdl.type, 'ZLIB');
+assert.strictEqual(typeof hdl.uid, 'number');
+assert.strictEqual(typeof hdl.triggerAsyncId, 'number');
 checkInvocations(hdl, { init: 1 }, 'when created handle');
 
 handle.init(
@@ -26,6 +26,8 @@ handle.init(
   constants.Z_MIN_LEVEL,
   constants.Z_DEFAULT_MEMLEVEL,
   constants.Z_DEFAULT_STRATEGY,
+  new Uint32Array(2),
+  function processCallback() { this.cb(); },
   Buffer.from('')
 );
 checkInvocations(hdl, { init: 1 }, 'when initialized handle');
@@ -34,7 +36,7 @@ const inBuf = Buffer.from('x');
 const outBuf = Buffer.allocUnsafe(1);
 
 let count = 2;
-handle.callback = common.mustCall(onwritten, 2);
+handle.cb = common.mustCall(onwritten, 2);
 handle.write(true, inBuf, 0, 1, outBuf, 0, 1);
 checkInvocations(hdl, { init: 1 }, 'when invoked write() on handle');
 

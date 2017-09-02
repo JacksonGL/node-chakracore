@@ -10,11 +10,15 @@ const fork = require('child_process').fork;
 const path = require('path');
 
 const runjs = path.join(__dirname, '..', '..', 'benchmark', 'run.js');
-const argv = ['--set', 'thousands=0.001',
+const argv = ['--set', 'type=depth',
               '--set', 'millions=0.000001',
+              '--set', 'thousands=0.001',
               'timers'];
 
-const child = fork(runjs, argv, {env: {NODEJS_BENCHMARK_ZERO_ALLOWED: 1}});
+const env = Object.assign({}, process.env,
+                          { NODEJS_BENCHMARK_ZERO_ALLOWED: 1 });
+
+const child = fork(runjs, argv, { env });
 child.on('exit', (code, signal) => {
   assert.strictEqual(code, 0);
   assert.strictEqual(signal, null);

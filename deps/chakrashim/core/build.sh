@@ -41,6 +41,8 @@ PRINT_USAGE() {
     echo "     --create-deb[=V]  Create .deb package with given V version."
     echo " -d, --debug           Debug build. Default: Release"
     echo "     --embed-icu       Download and embed ICU-57 statically."
+    echo "     --extra-defines=DEF=VAR,DEFINE,..."
+    echo "                       Compile with additional defines"
     echo " -h, --help            Show help"
     echo "     --icu=PATH        Path to ICU include folder (see example below)"
     echo " -j[=N], --jobs[=N]    Multicore build, allow N jobs at once."
@@ -58,6 +60,7 @@ PRINT_USAGE() {
     echo "     --target-path[=S] Output path for compiled binaries. Default: out/"
     echo "     --trace           Enables experimental built-in trace."
     echo "     --xcode           Generate XCode project."
+    echo "     --with-intl       Include the Intl object (requires ICU)."
     echo "     --without=FEATURE,FEATURE,..."
     echo "                       Disable FEATUREs from JSRT experimental features."
     echo "     --valgrind        Enable Valgrind support"
@@ -79,12 +82,15 @@ script (at your own risk)"
     echo ""
 }
 
-CHAKRACORE_DIR=`dirname $0`
+pushd `dirname $0` > /dev/null
+CHAKRACORE_DIR=`pwd -P`
+popd > /dev/null
 _CXX=""
 _CC=""
 _VERBOSE=""
 BUILD_TYPE="Release"
 CMAKE_GEN=
+EXTRA_DEFINES=""
 MAKE=make
 MULTICORE_BUILD=""
 NO_JIT=
@@ -158,6 +164,20 @@ while [[ $# -gt 0 ]]; do
         SHOULD_EMBED_ICU=1
         ;;
 
+    --extra-defines=*)
+        DEFINES=$1
+        DEFINES=${DEFINES:16}    # value after --extra-defines=
+        for x in ${DEFINES//,/ }  # replace comma with space then split
+        do
+            if [[ "$EXTRA_DEFINES" == "" ]]; then
+                EXTRA_DEFINES="-DEXTRA_DEFINES_SH="
+            else
+                EXTRA_DEFINES="$EXTRA_DEFINES;"
+            fi
+            EXTRA_DEFINES="${EXTRA_DEFINES}-D${x}"
+        done
+        ;;
+
     -t | --test-build)
         BUILD_TYPE="Test"
         ;;
@@ -182,7 +202,18 @@ while [[ $# -gt 0 ]]; do
 
     --icu=*)
         ICU_PATH=$1
-        ICU_PATH="-DICU_INCLUDE_PATH_SH=${ICU_PATH:6}"
+        # resolve tilde on path
+        eval ICU_PATH="${ICU_PATH:6}"
+        if [[ ! -d ${ICU_PATH} ]]; then
+            if [[ -d "${CHAKRACORE_DIR}/${ICU_PATH}" ]]; then
+                ICU_PATH="${CHAKRACORE_DIR}/${ICU_PATH}"
+            else
+                # if ICU_PATH is given, do not fallback to no-icu
+                echo "!!! couldn't find ICU at $ICU_PATH"
+                exit 1
+            fi
+        fi
+        ICU_PATH="-DICU_INCLUDE_PATH_SH=${ICU_PATH}"
         ;;
 
     --libs-only)
@@ -210,6 +241,10 @@ while [[ $# -gt 0 ]]; do
 
     --no-jit)
         NO_JIT="-DNO_JIT_SH=1"
+        ;;
+
+    --with-intl)
+        INTL_ICU="-DINTL_ICU_SH=1"
         ;;
 
     --xcode)
@@ -303,6 +338,10 @@ while [[ $# -gt 0 ]]; do
         VALGRIND="-DENABLE_VALGRIND_SH=1"
         ;;
 
+    -y | -Y)
+        ALWAYS_YES=1
+        ;;
+
     *)
         echo "Unknown option $1"
         PRINT_USAGE
@@ -320,7 +359,7 @@ if [[ $SHOULD_EMBED_ICU == 1 ]]; then
         echo -e "\nThis script will download ICU-LIB from\n${ICU_URL}\n"
         echo "It is licensed to you by its publisher, not Microsoft."
         echo "Microsoft is not responsible for the software."
-        echo "Your installation and use of ICU-LIB is subject to the publisher’s terms available here:"
+        echo "Your installation and use of ICU-LIB is subject to the publisher's terms available here:"
         echo -e "http://www.unicode.org/copyright.html#License\n"
         echo -e "----------------------------------------------------------------\n"
         echo "If you don't agree, press Ctrl+C to terminate"
@@ -375,10 +414,29 @@ if [[ ${#_VERBOSE} > 0 ]]; then
 fi
 
 # if LTO build is enabled and cc-toolchain/clang was compiled, use it instead
-if [[ $HAS_LTO == 1 && -f cc-toolchain/build/bin/clang++ ]]; then
-    SELF=`pwd`
-    _CXX="$SELF/cc-toolchain/build/bin/clang++"
-    _CC="$SELF/cc-toolchain/build/bin/clang"
+if [[ $HAS_LTO == 1 ]]; then
+    if [[ -f "${CHAKRACORE_DIR}/cc-toolchain/build/bin/clang++" ]]; then
+        SELF=`pwd`
+        _CXX="$CHAKRACORE_DIR/cc-toolchain/build/bin/clang++"
+        _CC="$CHAKRACORE_DIR/cc-toolchain/build/bin/clang"
+    else
+        # Linux LD possibly doesn't support LLVM LTO, check.. and compile clang if not
+        if [[ $OS_LINUX == 1 ]]; then
+            if [[ ! `ld -v` =~ 'GNU gold' ]]; then
+                pushd "$CHAKRACORE_DIR" > /dev/null
+                $CHAKRACORE_DIR/tools/compile_clang.sh
+                if [[ $? != 0 ]]; then
+                  echo -e "tools/compile_clang.sh has failed.\n"
+                  echo "Try with 'sudo' ?"
+                  popd > /dev/null
+                  exit 1
+                fi
+                _CXX="$CHAKRACORE_DIR/cc-toolchain/build/bin/clang++"
+                _CC="$CHAKRACORE_DIR/cc-toolchain/build/bin/clang"
+                popd > /dev/null
+            fi
+        fi
+    fi
 fi
 
 if [ "${HAS_LTO}${OS_LINUX}" == "11" ]; then
@@ -537,15 +595,26 @@ else
 fi
 
 echo Generating $BUILD_TYPE makefiles
+echo $EXTRA_DEFINES
 cmake $CMAKE_GEN $CC_PREFIX $ICU_PATH $LTO $STATIC_LIBRARY $ARCH $TARGET_OS \
-    $ENABLE_CC_XPLAT_TRACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE $SANITIZE $NO_JIT \
+    $ENABLE_CC_XPLAT_TRACE $EXTRA_DEFINES -DCMAKE_BUILD_TYPE=$BUILD_TYPE $SANITIZE $NO_JIT $INTL_ICU \
     $WITHOUT_FEATURES $WB_FLAG $WB_ARGS $CMAKE_EXPORT_COMPILE_COMMANDS $LIBS_ONLY_BUILD\
     $VALGRIND $BUILD_RELATIVE_DIRECTORY
 
 _RET=$?
 if [[ $? == 0 ]]; then
     if [[ $MAKE != 0 ]]; then
-        $MAKE $MULTICORE_BUILD $_VERBOSE $WB_TARGET 2>&1 | tee build.log
+        if [[ $MAKE != 'ninja' ]]; then
+            # $MFLAGS comes from host `make` process. Sub `make` process needs this (recursional make runs)
+            TEST_MFLAGS="${MFLAGS}*!"
+            if [[ $TEST_MFLAGS != "*!" ]]; then
+                # Get -j flag from the host
+                MULTICORE_BUILD=""
+            fi
+            $MAKE $MFLAGS $MULTICORE_BUILD $_VERBOSE $WB_TARGET 2>&1 | tee build.log
+        else
+            $MAKE $MULTICORE_BUILD $_VERBOSE $WB_TARGET 2>&1 | tee build.log
+        fi
         _RET=${PIPESTATUS[0]}
     else
         echo "Visit given folder above for xcode project file ----^"

@@ -95,12 +95,16 @@ methods, the `options.customFds` option is deprecated. The `options.stdio`
 option should be used instead.
 
 <a id="DEP0007"></a>
-### DEP0007: cluster worker.suicide
+### DEP0007: Replace cluster worker.suicide with worker.exitedAfterDisconnect
 
-Type: Runtime
+Type: End-of-Life
 
-Within the `cluster` module, the [`worker.suicide`][] property has been
-deprecated. Please use [`worker.exitedAfterDisconnect`][] instead.
+In an earlier version of the Node.js `cluster`, a boolean property with the name
+`suicide` was added to the `Worker` object. The intent of this property was to
+provide an indication of how and why the `Worker` instance exited. In Node.js
+6.0.0, the old property was deprecated and replaced with a new
+[`worker.exitedAfterDisconnect`][] property. The old property name did not
+precisely describe the actual semantics and was unnecessarily emotion-laden.
 
 <a id="DEP0008"></a>
 ### DEP0008: require('constants')
@@ -237,7 +241,7 @@ The `os.getNetworkInterfaces()` method is deprecated. Please use the
 <a id="DEP0024"></a>
 ### DEP0024: REPLServer.prototype.convertToContext()
 
-Type: Runtime
+Type: End-of-Life
 
 The `REPLServer.prototype.convertToContext()` API is deprecated and should
 not be used.
@@ -600,6 +604,63 @@ The DebugContext will be removed in V8 soon and will not be available in Node
 
 *Note*: DebugContext was an experimental API.
 
+<a id="DEP0070"></a>
+### DEP0070: async_hooks.currentId()
+
+Type: End-of-Life
+
+`async_hooks.currentId()` was renamed to `async_hooks.executionAsyncId()` for
+clarity.
+
+*Note*: change was made while `async_hooks` was an experimental API.
+
+<a id="DEP0071"></a>
+### DEP0071: async_hooks.triggerId()
+
+Type: End-of-Life
+
+`async_hooks.triggerId()` was renamed to `async_hooks.triggerAsyncId()` for
+clarity.
+
+*Note*: change was made while `async_hooks` was an experimental API.
+
+<a id="DEP0072"></a>
+### DEP0072: async_hooks.AsyncResource.triggerId()
+
+Type: End-of-Life
+
+`async_hooks.AsyncResource.triggerId()` was renamed to
+`async_hooks.AsyncResource.triggerAsyncId()` for clarity.
+
+*Note*: change was made while `async_hooks` was an experimental API.
+
+<a id="DEP0073"></a>
+### DEP0073: Several internal properties of net.Server
+
+Type: Runtime
+
+Accessing several internal, undocumented properties of `net.Server` instances
+with inappropriate names has been deprecated.
+
+*Note*: As the original API was undocumented and not generally useful for
+non-internal code, no replacement API is provided.
+
+<a id="DEP0074"></a>
+### DEP0074: REPLServer.bufferedCommand
+
+Type: Runtime
+
+The `REPLServer.bufferedCommand` property was deprecated in favor of
+[`REPLServer.clearBufferedCommand()`][].
+
+<a id="DEP0075"></a>
+### DEP0075: REPLServer.parseREPLKeyword()
+
+Type: Runtime
+
+`REPLServer.parseREPLKeyword()` was removed from userland visibility.
+
+
 [`Buffer.allocUnsafeSlow(size)`]: buffer.html#buffer_class_method_buffer_allocunsafeslow_size
 [`Buffer.from(array)`]: buffer.html#buffer_class_method_buffer_from_array
 [`Buffer.from(buffer)`]: buffer.html#buffer_class_method_buffer_from_buffer
@@ -616,7 +677,7 @@ The DebugContext will be removed in V8 soon and will not be available in Node
 [`crypto.createCredentials()`]: crypto.html#crypto_crypto_createcredentials_details
 [`crypto.pbkdf2()`]: crypto.html#crypto_crypto_pbkdf2_password_salt_iterations_keylen_digest_callback
 [`domain`]: domain.html
-[`ecdh.setPublicKey()`]: crypto.html#crypto_ecdh_setpublickey_public_key_encoding
+[`ecdh.setPublicKey()`]: crypto.html#crypto_ecdh_setpublickey_publickey_encoding
 [`emitter.listenerCount(eventName)`]: events.html#events_emitter_listenercount_eventname
 [`fs.access()`]: fs.html#fs_fs_access_path_mode_callback
 [`fs.exists(path, callback)`]: fs.html#fs_fs_exists_path_callback
@@ -659,8 +720,8 @@ The DebugContext will be removed in V8 soon and will not be available in Node
 [`util.puts()`]: util.html#util_util_puts_strings
 [`util`]: util.html
 [`worker.exitedAfterDisconnect`]: cluster.html#cluster_worker_exitedafterdisconnect
-[`worker.suicide`]: cluster.html#cluster_worker_suicide
 [alloc]: buffer.html#buffer_class_method_buffer_alloc_size_fill_encoding
 [alloc_unsafe_size]: buffer.html#buffer_class_method_buffer_allocunsafe_size
 [from_arraybuffer]: buffer.html#buffer_class_method_buffer_from_arraybuffer_byteoffset_length
 [from_string_encoding]: buffer.html#buffer_class_method_buffer_from_string_encoding
+[`REPLServer.clearBufferedCommand()`]: repl.html#repl_replserver_clearbufferedcommand

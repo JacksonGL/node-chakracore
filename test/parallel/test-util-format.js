@@ -20,7 +20,7 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
-require('../common');
+const common = require('../common');
 const assert = require('assert');
 const util = require('util');
 const symbol = Symbol('foo');
@@ -30,7 +30,7 @@ assert.strictEqual(util.format(''), '');
 assert.strictEqual(util.format([]), '[]');
 assert.strictEqual(util.format([0]), '[ 0 ]');
 assert.strictEqual(util.format({}), '{}');
-assert.strictEqual(util.format({foo: 42}), '{ foo: 42 }');
+assert.strictEqual(util.format({ foo: 42 }), '{ foo: 42 }');
 assert.strictEqual(util.format(null), 'null');
 assert.strictEqual(util.format(true), 'true');
 assert.strictEqual(util.format(false), 'false');
@@ -46,7 +46,11 @@ assert.strictEqual(util.format('%s', symbol), 'Symbol(foo)');
 assert.strictEqual(util.format('%j', symbol), 'undefined');
 assert.throws(function() {
   util.format('%d', symbol);
-}, TypeError);
+}, common.engineSpecificMessage({
+  v8: /^TypeError: Cannot convert a Symbol value to a number$/,
+  chakracore: /Error: Number expected/
+}));
+
 
 // Number format specifier
 assert.strictEqual(util.format('%d'), '%d');
@@ -101,11 +105,143 @@ assert.strictEqual(util.format('%j', '42'), '"42"');
 assert.strictEqual(util.format('%j %j', 42, 43), '42 43');
 assert.strictEqual(util.format('%j %j', 42), '42 %j');
 
+// Object format specifier
+const obj = {
+  foo: 'bar',
+  foobar: 1,
+  func: function() {}
+};
+const nestedObj = {
+  foo: 'bar',
+  foobar: {
+    foo: 'bar',
+    func: function() {}
+  }
+};
+assert.strictEqual(util.format('%o'), '%o');
+assert.strictEqual(util.format('%o', 42), '42');
+assert.strictEqual(util.format('%o', 'foo'), '\'foo\'');
+assert.strictEqual(
+  util.format('%o', obj),
+  common.engineSpecificMessage({
+    v8:
+    '{ foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [length]: 0,\n' +
+    '     [name]: \'func\',\n' +
+    '     [prototype]: func { [constructor]: [Circular] } } }',
+    chakracore:
+    '{ foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [prototype]: func { [constructor]: [Circular] },\n' +
+    '     [name]: \'func\',\n' +
+    '     [length]: 0 } }'
+  }));
+assert.strictEqual(
+  util.format('%o', nestedObj),
+  common.engineSpecificMessage({
+    v8:
+    '{ foo: \'bar\',\n' +
+    '  foobar: \n' +
+    '   { foo: \'bar\',\n' +
+    '     func: \n' +
+    '      { [Function: func]\n' +
+    '        [length]: 0,\n' +
+    '        [name]: \'func\',\n' +
+    '        [prototype]: func { [constructor]: [Circular] } } } }',
+    chakracore:
+    '{ foo: \'bar\',\n' +
+    '  foobar: \n' +
+    '   { foo: \'bar\',\n' +
+    '     func: \n' +
+    '      { [Function: func]\n' +
+    '        [prototype]: func { [constructor]: [Circular] },\n' +
+    '        [name]: \'func\',\n' +
+    '        [length]: 0 } } }'
+  }));
+assert.strictEqual(
+  util.format('%o %o', obj, obj),
+  common.engineSpecificMessage({
+    v8:
+    '{ foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [length]: 0,\n' +
+    '     [name]: \'func\',\n' +
+    '     [prototype]: func { [constructor]: [Circular] } } }' +
+    ' { foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [length]: 0,\n' +
+    '     [name]: \'func\',\n' +
+    '     [prototype]: func { [constructor]: [Circular] } } }',
+    chakracore:
+    '{ foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [prototype]: func { [constructor]: [Circular] },\n' +
+    '     [name]: \'func\',\n' +
+    '     [length]: 0 } }' +
+    ' { foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [prototype]: func { [constructor]: [Circular] },\n' +
+    '     [name]: \'func\',\n' +
+    '     [length]: 0 } }'
+  }));
+assert.strictEqual(
+  util.format('%o %o', obj),
+  common.engineSpecificMessage({
+    v8:
+    '{ foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [length]: 0,\n' +
+    '     [name]: \'func\',\n' +
+    '     [prototype]: func { [constructor]: [Circular] } } } %o',
+    chakracore:
+    '{ foo: \'bar\',\n' +
+    '  foobar: 1,\n' +
+    '  func: \n' +
+    '   { [Function: func]\n' +
+    '     [prototype]: func { [constructor]: [Circular] },\n' +
+    '     [name]: \'func\',\n' +
+    '     [length]: 0 } } %o'
+  }));
+
+assert.strictEqual(util.format('%O'), '%O');
+assert.strictEqual(util.format('%O', 42), '42');
+assert.strictEqual(util.format('%O', 'foo'), '\'foo\'');
+assert.strictEqual(
+  util.format('%O', obj),
+  '{ foo: \'bar\', foobar: 1, func: [Function: func] }');
+assert.strictEqual(
+  util.format('%O', nestedObj),
+  '{ foo: \'bar\', foobar: { foo: \'bar\', func: [Function: func] } }');
+assert.strictEqual(
+  util.format('%O %O', obj, obj),
+  '{ foo: \'bar\', foobar: 1, func: [Function: func] } ' +
+  '{ foo: \'bar\', foobar: 1, func: [Function: func] }');
+assert.strictEqual(
+  util.format('%O %O', obj),
+  '{ foo: \'bar\', foobar: 1, func: [Function: func] } %O');
+
 // Various format specifiers
 assert.strictEqual(util.format('%%s%s', 'foo'), '%sfoo');
 assert.strictEqual(util.format('%s:%s'), '%s:%s');
 assert.strictEqual(util.format('%s:%s', undefined), 'undefined:%s');
 assert.strictEqual(util.format('%s:%s', 'foo'), 'foo:%s');
+assert.strictEqual(util.format('%s:%i', 'foo'), 'foo:%i');
+assert.strictEqual(util.format('%s:%f', 'foo'), 'foo:%f');
 assert.strictEqual(util.format('%s:%s', 'foo', 'bar'), 'foo:bar');
 assert.strictEqual(util.format('%s:%s', 'foo', 'bar', 'baz'), 'foo:bar baz');
 assert.strictEqual(util.format('%%%s%%', 'hi'), '%hi%');
@@ -114,9 +250,25 @@ assert.strictEqual(util.format('%sbc%%def', 'a'), 'abc%def');
 assert.strictEqual(util.format('%d:%d', 12, 30), '12:30');
 assert.strictEqual(util.format('%d:%d', 12), '12:%d');
 assert.strictEqual(util.format('%d:%d'), '%d:%d');
+assert.strictEqual(util.format('%i:%i', 12, 30), '12:30');
+assert.strictEqual(util.format('%i:%i', 12), '12:%i');
+assert.strictEqual(util.format('%i:%i'), '%i:%i');
+assert.strictEqual(util.format('%f:%f', 12, 30), '12:30');
+assert.strictEqual(util.format('%f:%f', 12), '12:%f');
+assert.strictEqual(util.format('%f:%f'), '%f:%f');
 assert.strictEqual(util.format('o: %j, a: %j', {}, []), 'o: {}, a: []');
 assert.strictEqual(util.format('o: %j, a: %j', {}), 'o: {}, a: %j');
 assert.strictEqual(util.format('o: %j, a: %j'), 'o: %j, a: %j');
+assert.strictEqual(util.format('o: %o, a: %O', {}, []), 'o: {}, a: []');
+assert.strictEqual(util.format('o: %o, a: %o', {}), 'o: {}, a: %o');
+assert.strictEqual(util.format('o: %O, a: %O'), 'o: %O, a: %O');
+
+
+// Invalid format specifiers
+assert.strictEqual(util.format('a% b', 'x'), 'a% b x');
+assert.strictEqual(util.format('percent: %d%, fraction: %d', 10, 0.1),
+                   'percent: 10%, fraction: 0.1');
+assert.strictEqual(util.format('abc%', 1), 'abc% 1');
 
 {
   const o = {};

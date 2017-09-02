@@ -1,33 +1,29 @@
 # Node.js Project Governance
 
-## Core Technical Committee
-
-The Node.js project is governed by a Core Technical Committee (CTC) which is
-responsible for high-level guidance of the project.
-
-The CTC has final authority over this project including:
-
-* Technical direction
-* Project governance and process (including this policy)
-* Contribution policy
-* GitHub repository hosting
-* Conduct guidelines
-* Maintaining the list of additional Collaborators
-
-For the current list of CTC members, see the project
-[README.md](./README.md#current-project-team-members).
+The Node.js project is governed by its Collaborators, including a Core Technical
+Committee (CTC) which is responsible for high-level guidance of the project.
 
 ## Collaborators
 
 The [nodejs/node](https://github.com/nodejs/node) GitHub repository is
-maintained by the CTC and additional Collaborators who are added by the
-CTC on an ongoing basis.
+maintained by Collaborators who are added by the CTC on an ongoing basis.
 
 Individuals identified by the CTC as making significant and valuable
-contributions are made Collaborators and given commit access to the project.
+contributions across any Node.js repository may be made Collaborators and given
+commit access to the project. Activities taken into consideration include (but
+are not limited to) the quality of:
 
-_Note:_ If you make a significant contribution and are not considered
-for commit access, log an issue or contact a CTC member directly.
+* code commits and pull requests
+* documentation commits and pull requests
+* comments on issues and pull requests
+* contributions to the Node.js website
+* assistance provided to end users and novice contributors
+* participation in Working Groups
+* other participation in the wider Node.js community
+
+If individuals making valuable contributions do not believe they have been
+considered for commit access, they may log an issue or contact a CTC member
+directly.
 
 Modifications of the contents of the nodejs/node repository are made on
 a collaborative basis. Anybody with a GitHub account may propose a
@@ -45,18 +41,15 @@ be accepted unless:
   the change. Previously-objecting Collaborators do not necessarily have to
   sign-off on the change, but they should not be opposed to it.
 * The change is escalated to the CTC and the CTC votes to approve the change.
-  This should be used only after other options (especially discussion among
-  the disagreeing Collaborators) have been exhausted.
+  This should only happen if disagreements between Collaborators cannot be
+  resolved through discussion.
 
 Collaborators may opt to elevate significant or controversial modifications to
 the CTC by assigning the `ctc-review` label to a pull request or issue. The
 CTC should serve as the final arbiter where required.
 
-For the current list of Collaborators, see the project
-[README.md](./README.md#current-project-team-members).
-
-A guide for Collaborators is maintained in
-[COLLABORATOR_GUIDE.md](./COLLABORATOR_GUIDE.md).
+* [Current list of Collaborators](./README.md#current-project-team-members)
+* [A guide for Collaborators](./COLLABORATOR_GUIDE.md)
 
 ### Collaborator Activities
 
@@ -68,9 +61,23 @@ Typical activities of a Collaborator include:
 * participation in working groups
 * merging pull requests
 
-While the above are typical things done by Collaborators, there are no required
-activities to retain Collaborator status. There is currently no process by which
-inactive Collaborators are removed from the project.
+The CTC periodically reviews the Collaborator list to identify inactive
+Collaborators. Past Collaborators are typically given _Emeritus_ status. Emeriti
+may request that the CTC restore them to active status.
+
+## Core Technical Committee
+
+The Core Technical Committee (CTC) has final authority over this project
+including:
+
+* Technical direction
+* Project governance and process (including this policy)
+* Contribution policy
+* GitHub repository hosting
+* Conduct guidelines
+* Maintaining the list of additional Collaborators
+
+* [Current list of CTC members](./README.md#current-project-team-members)
 
 ## CTC Membership
 
@@ -83,9 +90,10 @@ membership beyond these rules.
 
 The CTC may add additional members to the CTC by a standard CTC motion.
 
-When a CTC member's participation in [CTC activities](#ctc-activities) has become
-minimal for a sustained period of time, the CTC will request that the member
-either indicate an intention to increase participation or voluntarily resign.
+When a CTC member's participation in [CTC activities](#ctc-activities) has
+become minimal for a sustained period of time, the CTC will request that the
+member either indicate an intention to increase participation or voluntarily
+resign.
 
 CTC members may only be removed by voluntary resignation or through a standard
 CTC motion.

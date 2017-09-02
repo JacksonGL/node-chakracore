@@ -11,7 +11,7 @@ class ServerThreadContext : public ThreadContextInfo
 public:
     typedef BVSparseNode<JitArenaAllocator> BVSparseNode;
 
-    ServerThreadContext(ThreadContextDataIDL * data);
+    ServerThreadContext(ThreadContextDataIDL * data, HANDLE processHandle);
     ~ServerThreadContext();
 
     virtual HANDLE GetProcessHandle() const override;
@@ -34,10 +34,13 @@ public:
 
     virtual bool IsNumericProperty(Js::PropertyId propId) override;
 
-    ptrdiff_t GetChakraBaseAddressDifference() const;
-    ptrdiff_t GetCRTBaseAddressDifference() const;
+    virtual ptrdiff_t GetChakraBaseAddressDifference() const override;
+    virtual ptrdiff_t GetCRTBaseAddressDifference() const override;
 
     OOPCodeGenAllocators * GetCodeGenAllocators();
+#if defined(_CONTROL_FLOW_GUARD) && (_M_IX86 || _M_X64)
+    OOPJITThunkEmitter * GetJITThunkEmitter();
+#endif
     CustomHeap::OOPCodePageAllocators * GetThunkPageAllocators();
     CustomHeap::OOPCodePageAllocators  * GetCodePageAllocators();
     SectionAllocWrapper * GetSectionAllocator();
@@ -47,24 +50,14 @@ public:
     void Release();
     void Close();
     PageAllocator * GetForegroundPageAllocator();
-#ifdef STACK_BACK_TRACE
     DWORD GetRuntimePid() { return m_pid; }
-#endif
 
     intptr_t GetRuntimeChakraBaseAddress() const;
     intptr_t GetRuntimeCRTBaseAddress() const;
-    intptr_t GetJITCRTBaseAddress() const;
+
+    static intptr_t GetJITCRTBaseAddress();
 
 private:
-
-    class AutoCloseHandle
-    {
-    public:
-        AutoCloseHandle(HANDLE handle) : handle(handle) { Assert(handle != GetCurrentProcess()); }
-        ~AutoCloseHandle() { CloseHandle(this->handle); }
-    private:
-        HANDLE handle;
-    };
 
     AutoCloseHandle m_autoProcessHandle;
 
@@ -74,6 +67,9 @@ private:
     SectionAllocWrapper m_sectionAllocator;
     CustomHeap::OOPCodePageAllocators m_thunkPageAllocators;
     CustomHeap::OOPCodePageAllocators  m_codePageAllocators;
+#if defined(_CONTROL_FLOW_GUARD) && (_M_IX86 || _M_X64)
+    OOPJITThunkEmitter m_jitThunkEmitter;
+#endif
     OOPCodeGenAllocators m_codeGenAlloc;
     // only allocate with this from foreground calls (never from CodeGen calls)
     PageAllocator m_pageAlloc;

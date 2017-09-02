@@ -6,20 +6,6 @@
 
 namespace Wasm
 {
-const uint64 specialDivLeftValue = (uint64)LONGLONG_MIN;
-
-template<>
-inline int64 WasmMath::Rem( int64 aLeft, int64 aRight )
-{
-    return (aLeft == specialDivLeftValue && aRight == -1) ? 0 : aLeft % aRight;
-}
-
-template<>
-inline uint64 WasmMath::Rem( uint64 aLeft, uint64 aRight )
-{
-    return (aLeft == specialDivLeftValue && aRight == -1) ? specialDivLeftValue : aLeft % aRight;
-}
-
 template<typename T> 
 inline T WasmMath::Shl( T aLeft, T aRight )
 {
@@ -119,13 +105,18 @@ inline int WasmMath::Eqz(T value)
 template<>
 inline double WasmMath::Copysign(double aLeft, double aRight)
 {
-    return _copysign(aLeft, aRight);
+    uint64 aLeftI64 = *(uint64*)(&aLeft);
+    uint64 aRightI64 = *(uint64*)(&aRight);
+    uint64 res = ((aLeftI64 & 0x7fffffffffffffffull) | (aRightI64 & 0x8000000000000000ull));
+    return *(double*)(&res);
 }
 
 template<>
 inline float WasmMath::Copysign(float aLeft, float aRight)
 {
-    uint32 res = ((*(uint32*)(&aLeft) & 0x7fffffffu) | (*(uint32*)(&aRight) & 0x80000000u));
+    uint32 aLeftI32 = *(uint32*)(&aLeft);
+    uint32 aRightI32 = *(uint32*)(&aRight);
+    uint32 res = ((aLeftI32 & 0x7fffffffu) | (aRightI32 & 0x80000000u));
     return *(float*)(&res);
 }
 

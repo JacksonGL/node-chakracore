@@ -414,6 +414,11 @@ private:
     BVSparse<JitArenaAllocator> *  objectTypeSyms;
     BVSparse<JitArenaAllocator> *  prePassCopyPropSym;  // Symbols that were copy prop'd during loop prepass
 
+    // Symbols that refer to slots in the stack frame.  We still use currentBlock->liveFields to tell us
+    // which of these slots are live; this bit-vector just identifies which entries in liveFields represent
+    // slots, so we can zero them all out quickly.
+    BVSparse<JitArenaAllocator> *  slotSyms;
+
     PropertySym *               propertySymUse;
 
     BVSparse<JitArenaAllocator> *  lengthEquivBv;
@@ -612,7 +617,6 @@ private:
     bool                    TryTypeSpecializeUnaryToFloatHelper(IR::Instr** pInstr, Value** pSrc1Val, Value* const src1OriginalVal, Value **pDstVal);
     bool                    TypeSpecializeBailoutExpectedInteger(IR::Instr* instr, Value* src1Val, Value** dstVal);
     bool                    TypeSpecializeStElem(IR::Instr **pInstr, Value *src1Val, Value **pDstVal);
-    bool                    TryGetIntConstIndexValue(IR::Instr *instr, IR::IndirOpnd *indirOpnd, bool checkSym, int32 *pValue, bool *isNotInt);
     bool                    ShouldExpectConventionalArrayIndexValue(IR::IndirOpnd *const indirOpnd);
     ValueType               GetDivValueType(IR::Instr* instr, Value* src1Val, Value* src2Val, bool specialize);
 
@@ -632,7 +636,6 @@ private:
     bool                    InspectInstrForMemSetCandidate(Loop* loop, IR::Instr* instr, struct MemSetEmitData* emitData, bool& errorInInstr);
     bool                    InspectInstrForMemCopyCandidate(Loop* loop, IR::Instr* instr, struct MemCopyEmitData* emitData, bool& errorInInstr);
     bool                    ValidateMemOpCandidates(Loop * loop, _Out_writes_(iEmitData) struct MemOpEmitData** emitData, int& iEmitData);
-    void                    HoistHeadSegmentForMemOp(IR::Instr *instr, IR::ArrayRegOpnd *arrayRegOpnd, IR::Instr *insertBeforeInstr);
     void                    EmitMemop(Loop * loop, LoopCount *loopCount, const struct MemOpEmitData* emitData);
     IR::Opnd*               GenerateInductionVariableChangeForMemOp(Loop *loop, byte unroll, IR::Instr *insertBeforeInstr = nullptr);
     IR::RegOpnd*            GenerateStartIndexOpndForMemop(Loop *loop, IR::Opnd *indexOpnd, IR::Opnd *sizeOpnd, bool isInductionVariableChangeIncremental, bool bIndexAlreadyChanged, IR::Instr *insertBeforeInstr = nullptr);
@@ -675,7 +678,8 @@ private:
     void                    DetectUnknownChangesToInductionVariables(GlobOptBlockData *const blockData);
     void                    SetInductionVariableValueNumbers(GlobOptBlockData *const blockData);
     void                    FinalizeInductionVariables(Loop *const loop, GlobOptBlockData *const headerData);
-    bool                    DetermineSymBoundOffsetOrValueRelativeToLandingPad(StackSym *const sym, const bool landingPadValueIsLowerBound, ValueInfo *const valueInfo, const IntBounds *const bounds, GlobOptBlockData *const landingPadGlobOptBlockData, int *const boundOffsetOrValueRef);
+    enum class SymBoundType {OFFSET, VALUE, UNKNOWN};
+    SymBoundType DetermineSymBoundOffsetOrValueRelativeToLandingPad(StackSym *const sym, const bool landingPadValueIsLowerBound, ValueInfo *const valueInfo, const IntBounds *const bounds, GlobOptBlockData *const landingPadGlobOptBlockData, int *const boundOffsetOrValueRef);
 
 private:
     void                    DetermineDominatingLoopCountableBlock(Loop *const loop, BasicBlock *const headerBlock);
@@ -725,9 +729,12 @@ private:
     void                    ToInt32Dst(IR::Instr *instr, IR::RegOpnd *dst, BasicBlock *block);
     void                    ToUInt32Dst(IR::Instr *instr, IR::RegOpnd *dst, BasicBlock *block);
     void                    ToFloat64Dst(IR::Instr *instr, IR::RegOpnd *dst, BasicBlock *block);
+
+#ifdef ENABLE_SIMDJS
     // SIMD_JS
     void                    TypeSpecializeSimd128Dst(IRType type, IR::Instr *instr, Value *valToTransfer, Value *const src1Value, Value **pDstVal);
     void                    ToSimd128Dst(IRType toType, IR::Instr *instr, IR::RegOpnd *dst, BasicBlock *block);
+#endif
 
     void                    OptConstFoldBr(bool test, IR::Instr *instr, Value * intTypeSpecSrc1Val = nullptr, Value * intTypeSpecSrc2Val = nullptr);
     void                    PropagateIntRangeForNot(int32 minimum, int32 maximum, int32 *pNewMin, int32 * pNewMax);
@@ -836,7 +843,7 @@ private:
     void                    ProcessFieldKills(IR::Instr * instr);
     void                    KillLiveFields(StackSym * stackSym, BVSparse<JitArenaAllocator> * bv);
     void                    KillLiveFields(PropertySym * propertySym, BVSparse<JitArenaAllocator> * bv);
-    void                    KillLiveFields(BVSparse<JitArenaAllocator> *const propertyEquivSet, BVSparse<JitArenaAllocator> *const bv) const;
+    void                    KillLiveFields(BVSparse<JitArenaAllocator> *const fieldsToKill, BVSparse<JitArenaAllocator> *const bv) const;
     void                    KillLiveElems(IR::IndirOpnd * indirOpnd, BVSparse<JitArenaAllocator> * bv, bool inGlobOpt, Func *func);
     void                    KillAllFields(BVSparse<JitArenaAllocator> * bv);
     void                    SetAnyPropertyMayBeWrittenTo();
@@ -897,6 +904,7 @@ private:
     bool                    PreparePropertySymOpndForTypeCheckSeq(IR::PropertySymOpnd *propertySymOpnd, IR::Instr * instr, Loop *loop);
     static bool             AreTypeSetsIdentical(Js::EquivalentTypeSet * leftTypeSet, Js::EquivalentTypeSet * rightTypeSet);
     static bool             IsSubsetOf(Js::EquivalentTypeSet * leftTypeSet, Js::EquivalentTypeSet * rightTypeSet);
+    static bool             CompareCurrentTypesWithExpectedTypes(JsTypeValueInfo *valueInfo, IR::PropertySymOpnd * propertySymOpnd);
     bool                    ProcessPropOpInTypeCheckSeq(IR::Instr* instr, IR::PropertySymOpnd *opnd);
     bool                    CheckIfInstrInTypeCheckSeqEmitsTypeCheck(IR::Instr* instr, IR::PropertySymOpnd *opnd);
     template<bool makeChanges>
@@ -919,9 +927,10 @@ private:
     void                    OptimizeIndirUses(IR::IndirOpnd *indir, IR::Instr * *pInstr, Value **indirIndexValRef);
     void                    RemoveCodeAfterNoFallthroughInstr(IR::Instr *instr);
     void                    ProcessTryHandler(IR::Instr* instr);
+    bool                    ProcessExceptionHandlingEdges(IR::Instr* instr);
     void                    InsertToVarAtDefInTryRegion(IR::Instr * instr, IR::Opnd * dstOpnd);
     void                    RemoveFlowEdgeToCatchBlock(IR::Instr * instr);
-    void                    RemoveFlowEdgeToFinallyOnExceptionBlock(IR::Instr * instr);
+    bool                    RemoveFlowEdgeToFinallyOnExceptionBlock(IR::Instr * instr);
 
     void                    CSEAddInstr(BasicBlock *block, IR::Instr *instr, Value *dstVal, Value *src1Val, Value *src2Val, Value *dstIndirIndexVal, Value *src1IndirIndexVal);
     void                    OptimizeChecks(IR::Instr * const instr);
@@ -975,8 +984,6 @@ private:
     IR::Instr *             TrackMarkTempObject(IR::Instr * instrStart, IR::Instr * instrEnd);
     void                    TrackTempObjectSyms(IR::Instr * instr, IR::RegOpnd * opnd);
     IR::Instr *             GenerateBailOutMarkTempObjectIfNeeded(IR::Instr * instr, IR::Opnd * opnd, bool isDst);
-
-    static void             InstantiateForceInlinedMembers_GlobOptIntBounds();
 
     friend class InvariantBlockBackwardIterator;
 };

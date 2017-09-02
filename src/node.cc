@@ -23,10 +23,12 @@
 #include "node_buffer.h"
 #include "node_constants.h"
 #include "node_javascript.h"
+#include "node_platform.h"
 #include "node_version.h"
 #include "node_internals.h"
 #include "node_revert.h"
 #include "node_debug_options.h"
+#include "node_perf.h"
 
 #if defined HAVE_PERFCTR
 #include "node_counters.h"
@@ -38,6 +40,10 @@
 
 #if defined(NODE_HAVE_I18N_SUPPORT)
 #include "node_i18n.h"
+#endif
+
+#if HAVE_INSPECTOR
+#include "inspector_io.h"
 #endif
 
 #if defined HAVE_DTRACE || defined HAVE_ETW
@@ -55,6 +61,7 @@
 #include "env-inl.h"
 #include "handle_wrap.h"
 #include "http_parser.h"
+#include "nghttp2/nghttp2ver.h"
 #include "req-wrap.h"
 #include "req-wrap-inl.h"
 #include "string_bytes.h"
@@ -189,6 +196,9 @@ static bool trace_enabled = false;
 static std::string trace_enabled_categories;  // NOLINT(runtime/string)
 static bool abort_on_uncaught_exception = false;
 
+// Bit flag used to track security reverts (see node_revert.h)
+unsigned int reverted = 0;
+
 #if defined(NODE_HAVE_I18N_SUPPORT)
 // Path to ICU data (for i18n / Intl)
 std::string icu_data_dir;  // NOLINT(runtime/string)
@@ -239,6 +249,9 @@ std::string config_warning_file;  // NOLINT(runtime/string)
 // that is used by lib/internal/bootstrap_node.js
 bool config_expose_internals = false;
 
+// Set in node.cc by ParseArgs when --expose-http2 is used.
+bool config_expose_http2 = false;
+
 bool v8_initialized = false;
 
 bool linux_at_secure = false;
@@ -249,28 +262,38 @@ static double prog_start_time;
 static Mutex node_isolate_mutex;
 static v8::Isolate* node_isolate;
 
-static node::DebugOptions debug_options;
+node::DebugOptions debug_options;
 
 static struct {
 #if NODE_USE_V8_PLATFORM
-  void Initialize(int thread_pool_size) {
-    platform_ = v8::platform::CreateDefaultPlatform(thread_pool_size);
+  void Initialize(int thread_pool_size, uv_loop_t* loop) {
+    tracing_agent_ =
+        trace_enabled ? new tracing::Agent() : nullptr;
+    platform_ = new NodePlatform(thread_pool_size, loop,
+        trace_enabled ? tracing_agent_->GetTracingController() : nullptr);
     V8::InitializePlatform(platform_);
-    tracing::TraceEventHelper::SetCurrentPlatform(platform_);
-  }
-
-  void PumpMessageLoop(Isolate* isolate) {
-    v8::platform::PumpMessageLoop(platform_, isolate);
+    tracing::TraceEventHelper::SetTracingController(
+        trace_enabled ? tracing_agent_->GetTracingController() : nullptr);
   }
 
   void Dispose() {
+    platform_->Shutdown();
     delete platform_;
     platform_ = nullptr;
+    delete tracing_agent_;
+    tracing_agent_ = nullptr;
+  }
+
+  void DrainVMTasks() {
+    platform_->DrainBackgroundTasks();
   }
 
 #if HAVE_INSPECTOR
   bool StartInspector(Environment *env, const char* script_path,
                       const node::DebugOptions& options) {
+    // Inspector agent can't fail to start, but if it was configured to listen
+    // right away on the websocket port and fails to bind/etc, this will return
+    // false.
     return env->inspector_agent()->Start(platform_, script_path, options);
   }
 
@@ -280,21 +303,19 @@ static struct {
 #endif  // HAVE_INSPECTOR
 
   void StartTracingAgent() {
-    CHECK(tracing_agent_ == nullptr);
-    tracing_agent_ = new tracing::Agent();
-    tracing_agent_->Start(platform_, trace_enabled_categories);
+    tracing_agent_->Start(trace_enabled_categories);
   }
 
   void StopTracingAgent() {
     tracing_agent_->Stop();
   }
 
-  v8::Platform* platform_;
   tracing::Agent* tracing_agent_;
+  NodePlatform* platform_;
 #else  // !NODE_USE_V8_PLATFORM
-  void Initialize(int thread_pool_size) {}
-  void PumpMessageLoop(Isolate* isolate) {}
+  void Initialize(int thread_pool_size, uv_loop_t* loop) {}
   void Dispose() {}
+  void DrainVMTasks() {}
   bool StartInspector(Environment *env, const char* script_path,
                       const node::DebugOptions& options) {
     env->ThrowError("Node compiled with NODE_USE_V8_PLATFORM=0");
@@ -308,7 +329,7 @@ static struct {
   void StopTracingAgent() {}
 #endif  // !NODE_USE_V8_PLATFORM
 
-#if NODE_USE_V8_PLATFORM == 0 || HAVE_INSPECTOR == 0
+#if !NODE_USE_V8_PLATFORM || !HAVE_INSPECTOR
   bool InspectorStarted(Environment *env) {
     return false;
   }
@@ -359,7 +380,12 @@ static void CheckImmediate(uv_check_t* handle) {
   Environment* env = Environment::from_immediate_check_handle(handle);
   HandleScope scope(env->isolate());
   Context::Scope context_scope(env->context());
-  MakeCallback(env, env->process_object(), env->immediate_callback_string());
+  MakeCallback(env->isolate(),
+               env->process_object(),
+               env->immediate_callback_string(),
+               0,
+               nullptr,
+               {0, 0}).ToLocalChecked();
 }
 
 
@@ -981,19 +1007,16 @@ Local<Value> UVException(Isolate* isolate,
 // Look up environment variable unless running as setuid root.
 bool SafeGetenv(const char* key, std::string* text) {
 #ifndef _WIN32
-  if (getuid() != geteuid() || getgid() != getegid()) {
-    text->clear();
-    return false;
-  }
+  if (linux_at_secure || getuid() != geteuid() || getgid() != getegid())
+    goto fail;
 #endif
-  if (linux_at_secure) {
-    text->clear();
-    return false;
-  }
+
   if (const char* value = getenv(key)) {
     *text = value;
     return true;
   }
+
+fail:
   text->clear();
   return false;
 }
@@ -1280,7 +1303,7 @@ void SetupPromises(const FunctionCallbackInfo<Value>& args) {
 
   env->process_object()->Delete(
       env->context(),
-      FIXED_ONE_BYTE_STRING(args.GetIsolate(), "_setupPromises")).FromJust();
+      FIXED_ONE_BYTE_STRING(isolate, "_setupPromises")).FromJust();
 }
 
 }  // anonymous namespace
@@ -1292,18 +1315,19 @@ void AddPromiseHook(v8::Isolate* isolate, promise_hook_func fn, void* arg) {
 }
 
 
-Local<Value> MakeCallback(Environment* env,
-                          Local<Value> recv,
-                          const Local<Function> callback,
-                          int argc,
-                          Local<Value> argv[]) {
+MaybeLocal<Value> MakeCallback(Environment* env,
+                               Local<Value> recv,
+                               const Local<Function> callback,
+                               int argc,
+                               Local<Value> argv[],
+                               async_context asyncContext) {
   // If you hit this assertion, you forgot to enter the v8::Context first.
   CHECK_EQ(env->context(), env->isolate()->GetCurrentContext());
 
-  Local<Object> object, domain;
-  bool has_domain = false;
+  Local<Object> object;
 
   Environment::AsyncCallbackScope callback_scope(env);
+  bool disposed_domain = false;
 
   if (recv->IsObject()) {
     object = recv.As<Object>();
@@ -1311,49 +1335,39 @@ Local<Value> MakeCallback(Environment* env,
 
   if (env->using_domains()) {
     CHECK(recv->IsObject());
-    Local<Value> domain_v = object->Get(env->domain_string());
-    has_domain = domain_v->IsObject();
-    if (has_domain) {
-      domain = domain_v.As<Object>();
-      if (domain->Get(env->disposed_string())->IsTrue())
-        return Undefined(env->isolate());
+    disposed_domain = DomainEnter(env, object);
+    if (disposed_domain) return Undefined(env->isolate());
+  }
+
+  MaybeLocal<Value> ret;
+
+  {
+    AsyncHooks::ExecScope exec_scope(env, asyncContext.async_id,
+                                     asyncContext.trigger_async_id);
+
+    if (asyncContext.async_id != 0) {
+      // No need to check a return value because the application will exit if
+      // an exception occurs.
+      AsyncWrap::EmitBefore(env, asyncContext.async_id);
+    }
+
+    ret = callback->Call(env->context(), recv, argc, argv);
+
+    if (ret.IsEmpty()) {
+      // NOTE: For backwards compatibility with public API we return Undefined()
+      // if the top level call threw.
+      return callback_scope.in_makecallback() ?
+          ret : Undefined(env->isolate());
+    }
+
+    if (asyncContext.async_id != 0) {
+      AsyncWrap::EmitAfter(env, asyncContext.async_id);
     }
   }
 
-  if (has_domain) {
-    Local<Value> enter_v = domain->Get(env->enter_string());
-    if (enter_v->IsFunction()) {
-      if (enter_v.As<Function>()->Call(domain, 0, nullptr).IsEmpty()) {
-        FatalError("node::MakeCallback",
-                   "domain enter callback threw, please report this");
-      }
-    }
-  }
-
-  // TODO(trevnorris): Correct this once node::MakeCallback() support id and
-  // triggerId. Consider completely removing it until then so the async id can
-  // propagate through to the fatalException after hook calls.
-  AsyncHooks::ExecScope exec_scope(env, 0, 0);
-
-  Local<Value> ret = callback->Call(recv, argc, argv);
-
-  if (ret.IsEmpty()) {
-    // NOTE: For backwards compatibility with public API we return Undefined()
-    // if the top level call threw.
-    return callback_scope.in_makecallback() ?
-        ret : Undefined(env->isolate()).As<Value>();
-  }
-
-  exec_scope.Dispose();
-
-  if (has_domain) {
-    Local<Value> exit_v = domain->Get(env->exit_string());
-    if (exit_v->IsFunction()) {
-      if (exit_v.As<Function>()->Call(domain, 0, nullptr).IsEmpty()) {
-        FatalError("node::MakeCallback",
-                   "domain exit callback threw, please report this");
-      }
-    }
+  if (env->using_domains()) {
+    disposed_domain = DomainExit(env, object);
+    if (disposed_domain) return Undefined(env->isolate());
   }
 
   if (callback_scope.in_makecallback()) {
@@ -1368,8 +1382,8 @@ Local<Value> MakeCallback(Environment* env,
 
   // Make sure the stack unwound properly. If there are nested MakeCallback's
   // then it should return early and not reach this code.
-  CHECK_EQ(env->current_async_id(), 0);
-  CHECK_EQ(env->trigger_id(), 0);
+  CHECK_EQ(env->current_async_id(), asyncContext.async_id);
+  CHECK_EQ(env->trigger_id(), asyncContext.trigger_async_id);
 
   Local<Object> process = env->process_object();
 
@@ -1386,58 +1400,42 @@ Local<Value> MakeCallback(Environment* env,
 }
 
 
-Local<Value> MakeCallback(Environment* env,
-                          Local<Object> recv,
-                          Local<String> symbol,
-                          int argc,
-                          Local<Value> argv[]) {
-  Local<Value> cb_v = recv->Get(symbol);
-  CHECK(cb_v->IsFunction());
-  return MakeCallback(env, recv.As<Value>(), cb_v.As<Function>(), argc, argv);
+// Public MakeCallback()s
+
+
+MaybeLocal<Value> MakeCallback(Isolate* isolate,
+                               Local<Object> recv,
+                               const char* method,
+                               int argc,
+                               Local<Value> argv[],
+                               async_context asyncContext) {
+  Local<String> method_string =
+      String::NewFromUtf8(isolate, method, v8::NewStringType::kNormal)
+          .ToLocalChecked();
+  return MakeCallback(isolate, recv, method_string, argc, argv, asyncContext);
 }
 
 
-Local<Value> MakeCallback(Environment* env,
-                          Local<Object> recv,
-                          const char* method,
-                          int argc,
-                          Local<Value> argv[]) {
-  Local<String> method_string = OneByteString(env->isolate(), method);
-  return MakeCallback(env, recv, method_string, argc, argv);
-}
-
-
-Local<Value> MakeCallback(Isolate* isolate,
-                          Local<Object> recv,
-                          const char* method,
-                          int argc,
-                          Local<Value> argv[]) {
-  EscapableHandleScope handle_scope(isolate);
-  Local<String> method_string = OneByteString(isolate, method);
-  return handle_scope.Escape(
-      MakeCallback(isolate, recv, method_string, argc, argv));
-}
-
-
-Local<Value> MakeCallback(Isolate* isolate,
-                          Local<Object> recv,
-                          Local<String> symbol,
-                          int argc,
-                          Local<Value> argv[]) {
-  EscapableHandleScope handle_scope(isolate);
+MaybeLocal<Value> MakeCallback(Isolate* isolate,
+                               Local<Object> recv,
+                               Local<String> symbol,
+                               int argc,
+                               Local<Value> argv[],
+                               async_context asyncContext) {
   Local<Value> callback_v = recv->Get(symbol);
   if (callback_v.IsEmpty()) return Local<Value>();
   if (!callback_v->IsFunction()) return Local<Value>();
   Local<Function> callback = callback_v.As<Function>();
-  return handle_scope.Escape(MakeCallback(isolate, recv, callback, argc, argv));
+  return MakeCallback(isolate, recv, callback, argc, argv, asyncContext);
 }
 
 
-Local<Value> MakeCallback(Isolate* isolate,
-                          Local<Object> recv,
-                          Local<Function> callback,
-                          int argc,
-                          Local<Value> argv[]) {
+MaybeLocal<Value> MakeCallback(Isolate* isolate,
+                               Local<Object> recv,
+                               Local<Function> callback,
+                               int argc,
+                               Local<Value> argv[],
+                               async_context asyncContext) {
   // Observe the following two subtleties:
   //
   // 1. The environment is retrieved from the callback function's context.
@@ -1445,11 +1443,48 @@ Local<Value> MakeCallback(Isolate* isolate,
   //
   // Because of the AssignToContext() call in src/node_contextify.cc,
   // the two contexts need not be the same.
-  EscapableHandleScope handle_scope(isolate);
   Environment* env = Environment::GetCurrent(callback->CreationContext());
   Context::Scope context_scope(env->context());
+  return MakeCallback(env, recv.As<Value>(), callback, argc, argv,
+                      asyncContext);
+}
+
+
+// Legacy MakeCallback()s
+
+Local<Value> MakeCallback(Isolate* isolate,
+                          Local<Object> recv,
+                          const char* method,
+                          int argc,
+                          Local<Value>* argv) {
+  EscapableHandleScope handle_scope(isolate);
   return handle_scope.Escape(
-      MakeCallback(env, recv.As<Value>(), callback, argc, argv));
+      MakeCallback(isolate, recv, method, argc, argv, {0, 0})
+          .FromMaybe(Local<Value>()));
+}
+
+
+Local<Value> MakeCallback(Isolate* isolate,
+    Local<Object> recv,
+    Local<String> symbol,
+    int argc,
+    Local<Value>* argv) {
+  EscapableHandleScope handle_scope(isolate);
+  return handle_scope.Escape(
+      MakeCallback(isolate, recv, symbol, argc, argv, {0, 0})
+          .FromMaybe(Local<Value>()));
+}
+
+
+Local<Value> MakeCallback(Isolate* isolate,
+    Local<Object> recv,
+    Local<Function> callback,
+    int argc,
+    Local<Value>* argv) {
+  EscapableHandleScope handle_scope(isolate);
+  return handle_scope.Escape(
+      MakeCallback(isolate, recv, callback, argc, argv, {0, 0})
+          .FromMaybe(Local<Value>()));
 }
 
 
@@ -3065,7 +3100,15 @@ static Local<Object> GetFeatures(Environment* env) {
 
 static void DebugPortGetter(Local<Name> property,
                             const PropertyCallbackInfo<Value>& info) {
-  info.GetReturnValue().Set(debug_options.port());
+  int port = debug_options.port();
+#if HAVE_INSPECTOR
+  if (port == 0) {
+    Environment* env = Environment::GetCurrent(info);
+    if (auto io = env->inspector_agent()->io())
+      port = io->port();
+  }
+#endif  // HAVE_INSPECTOR
+  info.GetReturnValue().Set(port);
 }
 
 
@@ -3217,6 +3260,10 @@ void SetupProcessObject(Environment* env,
       "modules",
       FIXED_ONE_BYTE_STRING(env->isolate(), node_modules_version));
 
+  READONLY_PROPERTY(versions,
+                    "nghttp2",
+                    FIXED_ONE_BYTE_STRING(env->isolate(), NGHTTP2_VERSION));
+
   // process._promiseRejectEvent
   Local<Object> promiseRejectEvent = Object::New(env->isolate());
   READONLY_DONT_ENUM_PROPERTY(process,
@@ -3265,7 +3312,8 @@ void SetupProcessObject(Environment* env,
   // process.release
   Local<Object> release = Object::New(env->isolate());
   READONLY_PROPERTY(process, "release", release);
-  READONLY_PROPERTY(release, "name", OneByteString(env->isolate(), "node"));
+  READONLY_PROPERTY(release, "name",
+                    OneByteString(env->isolate(), NODE_RELEASE));
 
 // if this is a release build and no explicit base has been set
 // substitute the standard release download URL
@@ -3410,19 +3458,33 @@ void SetupProcessObject(Environment* env,
     READONLY_PROPERTY(process, "traceDeprecation", True(env->isolate()));
   }
 
+  // TODO(refack): move the following 3 to `node_config`
   // --inspect-brk
   if (debug_options.wait_for_connect()) {
-    READONLY_PROPERTY(process, "_debugWaitConnect", True(env->isolate()));
+    READONLY_DONT_ENUM_PROPERTY(process,
+                                "_breakFirstLine", True(env->isolate()));
+  }
+
+  // --inspect --debug-brk
+  if (debug_options.deprecated_invocation()) {
+    READONLY_DONT_ENUM_PROPERTY(process,
+                                "_deprecatedDebugBrk", True(env->isolate()));
+  }
+
+  // --debug or, --debug-brk without --inspect
+  if (debug_options.invalid_invocation()) {
+    READONLY_DONT_ENUM_PROPERTY(process,
+                                "_invalidDebug", True(env->isolate()));
   }
 
   // --security-revert flags
 #define V(code, _, __)                                                        \
   do {                                                                        \
-    if (IsReverted(REVERT_ ## code)) {                                        \
+    if (IsReverted(SECURITY_REVERT_ ## code)) {                               \
       READONLY_PROPERTY(process, "REVERT_" #code, True(env->isolate()));      \
     }                                                                         \
   } while (0);
-  REVERSIONS(V)
+  SECURITY_REVERSIONS(V)
 #undef V
 
   size_t exec_path_len = 2 * PATH_MAX;
@@ -3622,7 +3684,7 @@ static void PrintHelp() {
          "  -r, --require              module to preload (option can be "
          "repeated)\n"
          "  -                          script read from stdin (default; "
-         "interactive mode if a tty)"
+         "interactive mode if a tty)\n"
 #if HAVE_INSPECTOR
          "  --inspect[=[host:]port]    activate inspector on host:port\n"
          "                             (default: 127.0.0.1:9229)\n"
@@ -3638,6 +3700,10 @@ static void PrintHelp() {
          "  --pending-deprecation      emit pending deprecation warnings\n"
          "  --no-warnings              silence all process warnings\n"
          "  --napi-modules             load N-API modules\n"
+         "  --abort-on-uncaught-exception\n"
+         "                             aborting instead of exiting causes a\n"
+         "                             core file to be generated for analysis\n"
+         "  --expose-http2             enable experimental HTTP2 support\n"
          "  --trace-warnings           show stack traces on process warnings\n"
          "  --redirect-warnings=file\n"
          "                             write warnings to file instead of\n"
@@ -3713,6 +3779,7 @@ static void PrintHelp() {
          "NODE_NO_WARNINGS             set to 1 to silence process warnings\n"
 #if !defined(NODE_WITHOUT_NODE_OPTIONS)
          "NODE_OPTIONS                 set CLI options in the environment\n"
+         "                             via a space-separated list\n"
 #endif
 #ifdef _WIN32
          "NODE_PATH                    ';'-separated list of directories\n"
@@ -3752,14 +3819,33 @@ void TTDFlagWarning_Cond(bool cond, const char* msg) {
 }
 #endif
 
+static bool ArgIsAllowed(const char* arg, const char* allowed) {
+  for (; *arg && *allowed; arg++, allowed++) {
+    // Like normal strcmp(), except that a '_' in `allowed` matches either a '-'
+    // or '_' in `arg`.
+    if (*allowed == '_') {
+      if (!(*arg == '_' || *arg == '-'))
+        return false;
+    } else {
+      if (*arg != *allowed)
+        return false;
+    }
+  }
+
+  // "--some-arg=val" is allowed for "--some-arg"
+  if (*arg == '=')
+    return true;
+
+  // Both must be null, or one string is just a prefix of the other, not a
+  // match.
+  return !*arg && !*allowed;
+}
+
+
 static void CheckIfAllowedInEnv(const char* exe, bool is_env,
                                 const char* arg) {
   if (!is_env)
     return;
-
-  // Find the arg prefix when its --some_arg=val
-  const char* eq = strchr(arg, '=');
-  size_t arglen = eq ? eq - arg : strlen(arg);
 
   static const char* whitelist[] = {
     // Node options, sorted in `node --help` order for ease of comparison.
@@ -3772,6 +3858,7 @@ static void CheckIfAllowedInEnv(const char* exe, bool is_env,
     "--throw-deprecation",
     "--no-warnings",
     "--napi-modules",
+    "--expose-http2",
     "--trace-warnings",
     "--redirect-warnings",
     "--trace-sync-io",
@@ -3788,13 +3875,14 @@ static void CheckIfAllowedInEnv(const char* exe, bool is_env,
     "--openssl-config",
     "--icu-data-dir",
 
-    // V8 options
+    // V8 options (define with '_', which allows '-' or '_')
+    "--abort_on_uncaught_exception",
     "--max_old_space_size",
   };
 
   for (unsigned i = 0; i < arraysize(whitelist); i++) {
     const char* allowed = whitelist[i];
-    if (strlen(allowed) == arglen && strncmp(allowed, arg, arglen) == 0)
+    if (ArgIsAllowed(arg, allowed))
       return;
   }
 
@@ -4005,6 +4093,9 @@ static void ParseArgs(int* argc,
     } else if (strcmp(arg, "--expose-internals") == 0 ||
                strcmp(arg, "--expose_internals") == 0) {
       config_expose_internals = true;
+    } else if (strcmp(arg, "--expose-http2") == 0 ||
+               strcmp(arg, "--expose_http2") == 0) {
+      config_expose_http2 = true;
     } else if (strcmp(arg, "-") == 0) {
       break;
     } else if (strcmp(arg, "--") == 0) {
@@ -4070,8 +4161,8 @@ static void ParseArgs(int* argc,
 }
 
 
-static void StartDebug(Environment* env, const char* path,
-                       DebugOptions debug_options) {
+static void StartInspector(Environment* env, const char* path,
+                           DebugOptions debug_options) {
 #if HAVE_INSPECTOR
   CHECK(!env->inspector_agent()->IsStarted());
   v8_platform.StartInspector(env, path, debug_options);
@@ -4368,14 +4459,6 @@ void Init(int* argc,
   // Make inherited handles noninheritable.
   uv_disable_stdio_inheritance();
 
-#if defined(NODE_HAVE_I18N_SUPPORT)
-  // Set the ICU casing flag early
-  // so the user can disable a flag --foo at run-time by passing
-  // --no_foo from the command line.
-  const char icu_case_mapping[] = "--icu_case_mapping";
-  V8::SetFlagsFromString(icu_case_mapping, sizeof(icu_case_mapping) - 1);
-#endif
-
 #if defined(NODE_V8_OPTIONS)
   // Should come before the call to V8::SetFlagsFromCommandLine()
   // so the user can disable a flag --foo at run-time by passing
@@ -4443,7 +4526,7 @@ void Init(int* argc,
   if (!i18n::InitializeICUDirectory(icu_data_dir)) {
     fprintf(stderr,
             "%s: could not initialize ICU "
-            "(check NODE_ICU_DATA or --icu-data-dir parameters)",
+            "(check NODE_ICU_DATA or --icu-data-dir parameters)\n",
             argv[0]);
     exit(9);
   }
@@ -4502,7 +4585,9 @@ void EmitBeforeExit(Environment* env) {
     FIXED_ONE_BYTE_STRING(env->isolate(), "beforeExit"),
     process_object->Get(exit_code)->ToInteger(env->isolate())
   };
-  MakeCallback(env, process_object, "emit", arraysize(args), args);
+  MakeCallback(env->isolate(),
+               process_object, "emit", arraysize(args), args,
+               {0, 0}).ToLocalChecked();
 }
 
 
@@ -4521,7 +4606,9 @@ int EmitExit(Environment* env) {
     Integer::New(env->isolate(), code)
   };
 
-  MakeCallback(env, process_object, "emit", arraysize(args), args);
+  MakeCallback(env->isolate(),
+               process_object, "emit", arraysize(args), args,
+               {0, 0}).ToLocalChecked();
 
   // Reload exit code, it may be changed by `emit('exit')`
   return process_object->Get(exitCode)->Int32Value();
@@ -4599,7 +4686,7 @@ inline int Start(Isolate* isolate, void* isolate_context,
   env.Start(argc, argv, exec_argc, exec_argv, v8_is_profiling);
 
   const char* path = argc > 1 ? argv[1] : nullptr;
-  StartDebug(&env, path, debug_options);
+  StartInspector(&env, path, debug_options);
 
   if (debug_options.inspector_enabled() && !v8_platform.InspectorStarted(&env))
     return 12;  // Signal internal error.
@@ -4632,25 +4719,22 @@ inline int Start(Isolate* isolate, void* isolate_context,
   {
     SealHandleScope seal(isolate);
     bool more;
+    PERFORMANCE_MARK(&env, LOOP_START);
     do {
-      v8_platform.PumpMessageLoop(isolate);
-      more = uv_run(env.event_loop(), UV_RUN_ONCE);
+      uv_run(env.event_loop(), UV_RUN_DEFAULT);
 
-      if (more == false) {
-        v8_platform.PumpMessageLoop(isolate);
-        EmitBeforeExit(&env);
+      EmitBeforeExit(&env);
 
-        // Emit `beforeExit` if the loop became alive either after emitting
-        // event, or after running some callbacks.
-        more = uv_loop_alive(env.event_loop());
-        if (uv_run(env.event_loop(), UV_RUN_NOWAIT) != 0)
-          more = true;
-      }
+      v8_platform.DrainVMTasks();
+      // Emit `beforeExit` if the loop became alive either after emitting
+      // event, or after running some callbacks.
+      more = uv_loop_alive(env.event_loop());
 
 #if ENABLE_TTD_NODE
       JsTTDNotifyYield();
 #endif
     } while (more == true);
+    PERFORMANCE_MARK(&env, LOOP_EXIT);
   }
 
   env.set_trace_sync_io(false);
@@ -4659,6 +4743,7 @@ inline int Start(Isolate* isolate, void* isolate_context,
   RunAtExit(&env);
   uv_key_delete(&thread_local_env);
 
+  v8_platform.DrainVMTasks();
   WaitForInspectorDisconnect(&env);
 #if defined(LEAK_SANITIZER)
   __lsan_do_leak_check();
@@ -4775,8 +4860,7 @@ inline int Start_TTDReplay(Isolate* isolate, void* isolate_context,
   Environment env(isolate_data, context);
   env.Start(argc, argv, exec_argc, exec_argv, v8_is_profiling);
 
-  // Start debug agent when argv has --debug
-  StartDebug(&env, nullptr, debug_options);
+  StartInspector(&env, nullptr, debug_options);
 
   if (debug_options.inspector_enabled() && !v8_platform.InspectorStarted(&env))
     return 12;  // Signal internal error.
@@ -4900,6 +4984,7 @@ inline int Start_TTDReplay(uv_loop_t* event_loop,
 int Start(int argc, char** argv) {
   atexit([] () { uv_tty_reset_mode(); });
   PlatformInit();
+  node::performance::performance_node_start = PERFORMANCE_NOW();
 
   CHECK_GT(argc, 0);
 
@@ -4928,7 +5013,7 @@ int Start(int argc, char** argv) {
   V8::SetEntropySource(crypto::EntropySource);
 #endif  // HAVE_OPENSSL
 
-  v8_platform.Initialize(v8_thread_pool_size);
+  v8_platform.Initialize(v8_thread_pool_size, uv_default_loop());
 
 #ifndef NODE_ENGINE_CHAKRACORE
   // Enable tracing when argv has --trace-events-enabled.
@@ -4945,10 +5030,20 @@ int Start(int argc, char** argv) {
 #endif
 
   V8::Initialize();
+  node::performance::performance_v8_start = PERFORMANCE_NOW();
   v8_initialized = true;
 
 #if ENABLE_TTD_NODE
   bool chk_debug_enabled = debug_options.inspector_enabled();
+
+  std::string envDoRecordVar;
+  bool envDoRecord = SafeGetenv("DO_TTD_RECORD", &envDoRecordVar) &&
+      envDoRecordVar[0] == '1';
+
+  if (!s_doTTRecord && !s_doTTReplay) {
+    // Apply the value from the environment variable
+    s_doTTRecord = envDoRecord;
+  }
 
   TTDFlagWarning_Cond(!s_doTTRecord || !s_doTTReplay,
       "Cannot enable record & replay at same time.\n");
@@ -4979,6 +5074,11 @@ int Start(int argc, char** argv) {
       TTDFlagWarning_Cond(s_ttoptReplayUri != nullptr,
           "Must set replay source info when replaying.\n");
   }
+
+  if (s_doTTRecord) {
+    // Apply the environment variable to be inherited by child processes.
+    putenv("DO_TTD_RECORD=1");
+  }
 #endif
 
 
@@ -5002,6 +5102,12 @@ int Start(int argc, char** argv) {
   v8_initialized = false;
   V8::Dispose();
 
+  // uv_run cannot be called from the time before the beforeExit callback
+  // runs until the program exits unless the event loop has any referenced
+  // handles after beforeExit terminates. This prevents unrefed timers
+  // that happen to terminate during shutdown from being run unsafely.
+  // Since uv_run cannot be called, uv_async handles held by the platform
+  // will never be fully cleaned up.
   v8_platform.Dispose();
 
   delete[] exec_argv;

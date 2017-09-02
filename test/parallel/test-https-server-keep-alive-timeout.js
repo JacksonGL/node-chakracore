@@ -1,7 +1,9 @@
 'use strict';
 
 const common = require('../common');
-const assert = require('assert');
+if (!common.hasCrypto)
+  common.skip('missing crypto');
+
 const https = require('https');
 const tls = require('tls');
 const fs = require('fs');
@@ -9,8 +11,8 @@ const fs = require('fs');
 const tests = [];
 
 const serverOptions = {
-  key: fs.readFileSync(common.fixturesDir + '/keys/agent1-key.pem'),
-  cert: fs.readFileSync(common.fixturesDir + '/keys/agent1-cert.pem')
+  key: fs.readFileSync(`${common.fixturesDir}/keys/agent1-key.pem`),
+  cert: fs.readFileSync(`${common.fixturesDir}/keys/agent1-cert.pem`)
 };
 
 function test(fn) {
@@ -26,24 +28,17 @@ function run() {
 }
 
 test(function serverKeepAliveTimeoutWithPipeline(cb) {
-  let socket;
-  let destroyedSockets = 0;
-  let timeoutCount = 0;
-  let requestCount = 0;
-  process.on('exit', function() {
-    assert.strictEqual(timeoutCount, 1);
-    assert.strictEqual(requestCount, 3);
-    assert.strictEqual(destroyedSockets, 1);
-  });
-  const server = https.createServer(serverOptions, (req, res) => {
-    socket = req.socket;
-    requestCount++;
-    res.end();
-  });
-  server.setTimeout(200, (socket) => {
-    timeoutCount++;
+  const server = https.createServer(
+    serverOptions,
+    common.mustCall((req, res) => {
+      res.end();
+    }, 3));
+  server.setTimeout(500, common.mustCall((socket) => {
+    // End this test and call `run()` for the next test (if any).
     socket.destroy();
-  });
+    server.close();
+    cb();
+  }));
   server.keepAliveTimeout = 50;
   server.listen(0, common.mustCall(() => {
     const options = {
@@ -56,32 +51,17 @@ test(function serverKeepAliveTimeoutWithPipeline(cb) {
       c.write('GET /2 HTTP/1.1\r\nHost: localhost\r\n\r\n');
       c.write('GET /3 HTTP/1.1\r\nHost: localhost\r\n\r\n');
     });
-    setTimeout(() => {
-      server.close();
-      if (socket.destroyed) destroyedSockets++;
-      cb();
-    }, 1000);
   }));
 });
 
 test(function serverNoEndKeepAliveTimeoutWithPipeline(cb) {
-  let socket;
-  let destroyedSockets = 0;
-  let timeoutCount = 0;
-  let requestCount = 0;
-  process.on('exit', () => {
-    assert.strictEqual(timeoutCount, 1);
-    assert.strictEqual(requestCount, 3);
-    assert.strictEqual(destroyedSockets, 1);
-  });
-  const server = https.createServer(serverOptions, (req, res) => {
-    socket = req.socket;
-    requestCount++;
-  });
-  server.setTimeout(200, (socket) => {
-    timeoutCount++;
+  const server = https.createServer(serverOptions, common.mustCall(3));
+  server.setTimeout(500, common.mustCall((socket) => {
+    // End this test and call `run()` for the next test (if any).
     socket.destroy();
-  });
+    server.close();
+    cb();
+  }));
   server.keepAliveTimeout = 50;
   server.listen(0, common.mustCall(() => {
     const options = {
@@ -94,10 +74,5 @@ test(function serverNoEndKeepAliveTimeoutWithPipeline(cb) {
       c.write('GET /2 HTTP/1.1\r\nHost: localhost\r\n\r\n');
       c.write('GET /3 HTTP/1.1\r\nHost: localhost\r\n\r\n');
     });
-    setTimeout(() => {
-      server.close();
-      if (socket && socket.destroyed) destroyedSockets++;
-      cb();
-    }, 1000);
   }));
 });

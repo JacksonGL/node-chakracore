@@ -22,8 +22,8 @@
 'use strict';
 const common = require('../common');
 const assert = require('assert');
-const {join} = require('path');
-const {execFile} = require('child_process');
+const { join } = require('path');
+const { execFile } = require('child_process');
 
 // test for leaked global detection
 global.gc = 42;  // Not a valid global unless --expose_gc is set.
@@ -88,3 +88,23 @@ for (const p of failFixtures) {
     assert.strictEqual(firstLine, expected);
   }));
 }
+
+// hijackStderr and hijackStdout
+const HIJACK_TEST_ARRAY = [ 'foo\n', 'bar\n', 'baz\n' ];
+[ 'err', 'out' ].forEach((txt) => {
+  const stream = process[`std${txt}`];
+  const originalWrite = stream.write;
+
+  common[`hijackStd${txt}`](common.mustCall(function(data) {
+    assert.strictEqual(data, HIJACK_TEST_ARRAY[stream.writeTimes]);
+  }, HIJACK_TEST_ARRAY.length));
+  assert.notStrictEqual(originalWrite, stream.write);
+
+  HIJACK_TEST_ARRAY.forEach((val) => {
+    stream.write(val, common.mustCall());
+  });
+
+  assert.strictEqual(HIJACK_TEST_ARRAY.length, stream.writeTimes);
+  common[`restoreStd${txt}`]();
+  assert.strictEqual(originalWrite, stream.write);
+});

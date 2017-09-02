@@ -532,9 +532,7 @@ LowererMDArch::LowerCallArgs(IR::Instr *callInstr, ushort callFlags, Js::ArgSlot
     }
 
     AssertMsg(startCallInstr->m_opcode == Js::OpCode::StartCall ||
-              startCallInstr->m_opcode == Js::OpCode::LoweredStartCall ||
-              startCallInstr->m_opcode == Js::OpCode::StartCallAsmJsE ||
-              startCallInstr->m_opcode == Js::OpCode::StartCallAsmJsI,
+              startCallInstr->m_opcode == Js::OpCode::LoweredStartCall,
               "Problem with arg chain.");
     AssertMsg(startCallInstr->GetArgOutCount(/*getInterpreterArgOutCount*/ false) == argCount ||
               m_func->GetJITFunctionBody()->IsAsmJsMode(),
@@ -754,7 +752,7 @@ LowererMDArch::LowerCallI(IR::Instr * callInstr, ushort callFlags, bool isHelper
     GeneratePreCall(callInstr, functionObjOpnd, insertBeforeInstrForCFGCheck);
 
     // We need to get the calculated CallInfo in SimpleJit because that doesn't include any changes for stack alignment
-    IR::IntConstOpnd *callInfo;
+    IR::IntConstOpnd *callInfo = nullptr;
     int32 argCount = LowerCallArgs(callInstr, callFlags, 1, &callInfo);
 
 
@@ -793,16 +791,6 @@ LowererMDArch::LowerCallI(IR::Instr * callInstr, ushort callFlags, bool isHelper
             ret);
     }
     return ret;
-}
-
-IR::Instr *
-LowererMDArch::LowerCallPut(IR::Instr *callInstr)
-{
-    // Note: what we have to do here is call a helper with the Jscript calling convention,
-    // so we need to factor the lowering of arguments out of the CallI expansion.
-
-    AssertMsg(FALSE, "TODO: LowerCallPut not implemented");
-    return nullptr;
 }
 
 static inline IRType ExtendHelperArg(IRType type)
@@ -1005,6 +993,7 @@ LowererMDArch::GetArgSlotOpnd(uint16 index, StackSym * argSym, bool isHelper /*=
 
     uint16 argPosition = index;
 
+#ifdef ENABLE_SIMDJS
     // Without SIMD the index is the Var offset and is also the argument index. Since each arg = 1 Var.
     // With SIMD, args are of variable length and we need to the argument position in the args list.
     if (m_func->IsSIMDEnabled() &&
@@ -1014,6 +1003,7 @@ LowererMDArch::GetArgSlotOpnd(uint16 index, StackSym * argSym, bool isHelper /*=
     {
         argPosition = (uint16)argSym->m_argPosition;
     }
+#endif
 
     IR::Opnd *argSlotOpnd = nullptr;
 
@@ -1065,7 +1055,7 @@ LowererMDArch::GetArgSlotOpnd(uint16 index, StackSym * argSym, bool isHelper /*=
 IR::Instr *
 LowererMDArch::LowerAsmJsCallE(IR::Instr *callInstr)
 {
-    IR::IntConstOpnd *callInfo;
+    IR::IntConstOpnd *callInfo = nullptr;
     int32 argCount = this->LowerCallArgs(callInstr, Js::CallFlags_Value, 1, &callInfo);
 
     IR::Instr* ret = this->LowerCall(callInstr, argCount);
@@ -1468,14 +1458,6 @@ LowererMDArch::MovArgFromReg2Stack(IR::Instr * instr, RegNum reg, uint16 slotNum
 IR::Instr *
 LowererMDArch::LowerEntryInstr(IR::EntryInstr * entryInstr)
 {
-#if _CONTROL_FLOW_GUARD_SHADOW_STACK
-    /* 
-     * If RFG is enabled for the process, then this precedes the prologue:
-     *
-     * mov    rax,                       [rsp]
-     * mov    fs:[rsp],                  rax
-     */
-#endif
     /*
      * push   rbp
      * mov    rbp,                       rsp
@@ -1690,31 +1672,6 @@ LowererMDArch::LowerEntryInstr(IR::EntryInstr * entryInstr)
     m_func->m_prologEncoder.RecordNonVolRegSave();
     firstPrologInstr = pushInstr;
 
-#if _CONTROL_FLOW_GUARD_SHADOW_STACK
-    if (_guard_rf_checks_enforced()) {
-        // Generate MOV FS:[RSP], RAX
-        raxOpnd = IR::RegOpnd::New(nullptr, RegRAX, TyMachReg, this->m_func);
-        IR::Instr * storeRetInstr = IR::Instr::New(Js::OpCode::MOV,
-                                                  IR::IndirOpnd::New(stackPointer,
-                                                                     0,
-                                                                     TyInt64,
-                                                                     this->m_func),
-                                                  raxOpnd,
-                                                  this->m_func);
-        storeRetInstr->isFsBased = true;
-        entryInstr->InsertAfter(storeRetInstr);
-
-        // Generate MOV RAX, [RSP]
-        IR::Instr * getRetInstr = IR::Instr::New(Js::OpCode::MOV,
-                                                  raxOpnd,
-                                                  IR::IndirOpnd::New(stackPointer,
-                                                                     0,
-                                                                     TyInt64,
-                                                                     this->m_func),
-                                                  this->m_func);
-        entryInstr->InsertAfter(getRetInstr);
-    }
-#endif
 
     //
     // Insert pragmas that tell the prolog encoder the extent of the prolog.
@@ -2108,35 +2065,6 @@ LowererMDArch::LowerExitInstr(IR::ExitInstr * exitInstr)
         retReg = IR::RegOpnd::New(nullptr, this->GetRegReturn(TyMachReg), TyMachReg, this->m_func);
     }
 
-#if _CONTROL_FLOW_GUARD_SHADOW_STACK
-    IR::LabelInstr * failLabel = nullptr;
-    if (_guard_rf_checks_enforced()) {
-        // Generate MOV RCX, FS:[RSP]
-        IR::Opnd * rcxOpnd = IR::RegOpnd::New(nullptr, RegRCX, TyMachReg, this->m_func);
-        IR::Instr * getRetInstr = IR::Instr::New(Js::OpCode::MOV,
-                                                rcxOpnd,
-                                                IR::IndirOpnd::New(stackPointer,
-                                                                    0,
-                                                                    TyInt64,
-                                                                    this->m_func),
-                                                this->m_func);
-        getRetInstr->isFsBased = true;
-        exitInstr->InsertBefore(getRetInstr);
-
-        // Generate CMP RCX, [RSP]
-        IR::Instr * cmpRetInstr = IR::Instr::New(Js::OpCode::CMP, m_func);
-        cmpRetInstr->SetSrc1(IR::IndirOpnd::New(stackPointer,
-                                                0,
-                                                TyInt64,
-                                                this->m_func));
-        cmpRetInstr->SetSrc2(rcxOpnd);
-        exitInstr->InsertBefore(cmpRetInstr);
-
-        // Generate JNE $fail
-        failLabel = IR::LabelInstr::New(Js::OpCode::Label, m_func, true);
-        exitInstr->InsertBefore(IR::BranchInstr::New(Js::OpCode::JNE, failLabel, m_func));
-    }
-#endif
 
     // Generate RET
     IR::Instr * retInstr = IR::Instr::New(Js::OpCode::RET, this->m_func);
@@ -2146,20 +2074,6 @@ LowererMDArch::LowerExitInstr(IR::ExitInstr * exitInstr)
 
     retInstr->m_opcode = Js::OpCode::RET;
 
-#if _CONTROL_FLOW_GUARD_SHADOW_STACK
-    if (_guard_rf_checks_enforced() && failLabel != nullptr) {
-        // insert $fail
-        exitInstr->InsertBefore(failLabel);
-
-        // MOV RCX, __guard_ss_verify_failure
-        IR::RegOpnd * target = IR::RegOpnd::New(nullptr, RegRCX, TyMachReg, m_func);
-        this->lowererMD->CreateAssign(target, IR::HelperCallOpnd::New(IR::HelperReturnFlowGuardFailureRoutine, m_func), exitInstr);
-
-        // JMP RCX
-        IR::Instr * branch = IR::MultiBranchInstr::New(Js::OpCode::JMP, target, m_func);
-        exitInstr->InsertBefore(branch);
-    }
-#endif
 
     return exitInstr;
 }
@@ -2183,32 +2097,6 @@ LowererMDArch::LowerInt64Assign(IR::Instr * instr)
 {
     this->lowererMD->ChangeToAssign(instr);
     return instr;
-}
-
-void
-LowererMDArch::EmitPtrInstr(IR::Instr *instr)
-{
-    bool legalize = false;
-    switch (instr->m_opcode)
-    {
-    case Js::OpCode::Add_Ptr:
-        LowererMD::ChangeToAdd(instr, false /* needFlags */);
-        legalize = true;
-        break;
-
-    default:
-        AssertMsg(UNREACHED, "Un-implemented ptr opcode");
-    }
-    // OpEq's
-
-    if (legalize)
-    {
-        LowererMD::Legalize(instr);
-    }
-    else
-    {
-        LowererMD::MakeDstEquSrc1(instr);
-    }
 }
 
 void
@@ -2267,9 +2155,11 @@ LowererMDArch::EmitInt4Instr(IR::Instr *instr, bool signExtend /* = false */)
         legalize = true;
         break;
 
+    case Js::OpCode::DivU_I4:
     case Js::OpCode::Div_I4:
         instr->SinkDst(Js::OpCode::MOV, RegRAX);
         goto idiv_common;
+    case Js::OpCode::RemU_I4:
     case Js::OpCode::Rem_I4:
         instr->SinkDst(Js::OpCode::MOV, RegRDX);
 idiv_common:
@@ -2278,6 +2168,7 @@ idiv_common:
             if (isUnsigned)
             {
                 Assert(instr->GetSrc2()->IsUnsigned());
+                Assert(instr->m_opcode == Js::OpCode::RemU_I4 || instr->m_opcode == Js::OpCode::DivU_I4);
                 instr->m_opcode = Js::OpCode::DIV;
             }
             else
@@ -2655,7 +2546,7 @@ LowererMDArch::EmitLongToInt(IR::Opnd *dst, IR::Opnd *src, IR::Instr *instrInser
     Assert(dst->IsRegOpnd() && dst->IsInt32());
     Assert(src->IsInt64());
 
-    instrInsert->InsertBefore(IR::Instr::New(Js::OpCode::MOV_TRUNC, dst, src, this->m_func));
+    instrInsert->InsertBefore(IR::Instr::New(Js::OpCode::MOV_TRUNC, dst, src, instrInsert->m_func));
 }
 
 void
@@ -3131,6 +3022,9 @@ LowererMDArch::FinalLower()
     {
         switch (instr->m_opcode)
         {
+        case Js::OpCode::Ret:
+            instr->Remove();
+            break;
         case Js::OpCode::LdArgSize:
             Assert(this->m_func->HasTry());
             instr->m_opcode = Js::OpCode::MOV;

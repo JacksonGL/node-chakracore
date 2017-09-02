@@ -193,8 +193,12 @@ HRESULT
 ServerInitializeThreadContext(
     /* [in] */ handle_t binding,
     /* [in] */ __RPC__in ThreadContextDataIDL * threadContextData,
+#ifdef USE_RPC_HANDLE_MARSHALLING
+    /* [in] */ __RPC__in HANDLE processHandle,
+#endif
     /* [out] */ __RPC__deref_out_opt PPTHREADCONTEXT_HANDLE threadContextInfoAddress,
-    /* [out] */ __RPC__out intptr_t *prereservedRegionAddr)
+    /* [out] */ __RPC__out intptr_t *prereservedRegionAddr,
+    /* [out] */ __RPC__out intptr_t *jitThunkAddr)
 {
     if (threadContextInfoAddress == nullptr || prereservedRegionAddr == nullptr)
     {
@@ -204,51 +208,69 @@ ServerInitializeThreadContext(
 
     *threadContextInfoAddress = nullptr;
     *prereservedRegionAddr = 0;
+    *jitThunkAddr = 0;
 
     ServerThreadContext * contextInfo = nullptr;
+
+    DWORD clientPid;
+    HRESULT hr = HRESULT_FROM_WIN32(I_RpcBindingInqLocalClientPID(binding, &clientPid));
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+#ifdef USE_RPC_HANDLE_MARSHALLING
+    HANDLE targetHandle;
+    if (!DuplicateHandle(GetCurrentProcess(), processHandle, GetCurrentProcess(), &targetHandle, 0, false, DUPLICATE_SAME_ACCESS))
+    {
+        return E_ACCESSDENIED;
+    }
+#else
+    HANDLE targetHandle = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_QUERY_LIMITED_INFORMATION, false, clientPid);
+    if (!targetHandle)
+    {
+        return E_ACCESSDENIED;
+    }
+#endif
     try
     {
         AUTO_NESTED_HANDLED_EXCEPTION_TYPE(static_cast<ExceptionType>(ExceptionType_OutOfMemory));
-        contextInfo = HeapNew(ServerThreadContext, threadContextData);
+        contextInfo = HeapNew(ServerThreadContext, threadContextData, targetHandle);
         ServerContextManager::RegisterThreadContext(contextInfo);
     }
     catch (Js::OutOfMemoryException)
     {
-        CloseHandle((HANDLE)threadContextData->processHandle);
+        CloseHandle(targetHandle);
         return E_OUTOFMEMORY;
     }
 
     return ServerCallWrapper(contextInfo, [&]()->HRESULT
     {
-        RPC_CALL_ATTRIBUTES CallAttributes = {0};
-
-        CallAttributes.Version = RPC_CALL_ATTRIBUTES_VERSION;
-        CallAttributes.Flags = RPC_QUERY_CLIENT_PID;
-        HRESULT hr = HRESULT_FROM_WIN32(RpcServerInqCallAttributes(binding, &CallAttributes));
-        if (FAILED(hr))
-        {
-            return hr;
-        }
-        if (CallAttributes.ClientPID != (HANDLE)contextInfo->GetRuntimePid())
+        if (clientPid != contextInfo->GetRuntimePid())
         {
             return E_ACCESSDENIED;
         }
-        hr = CheckModuleAddress(contextInfo->GetProcessHandle(), (LPCVOID)contextInfo->GetRuntimeChakraBaseAddress(), (LPCVOID)AutoSystemInfo::Data.dllLoadAddress);
+        hr = CheckModuleAddress(targetHandle, (LPCVOID)contextInfo->GetRuntimeChakraBaseAddress(), (LPCVOID)AutoSystemInfo::Data.dllLoadAddress);
         if (FAILED(hr))
         {
             return hr;
         }
-        if (contextInfo->GetUCrtC99MathApis()->IsAvailable())
+        hr = CheckModuleAddress(targetHandle, (LPCVOID)contextInfo->GetRuntimeCRTBaseAddress(), (LPCVOID)contextInfo->GetJITCRTBaseAddress());
+        if (FAILED(hr))
         {
-            hr = CheckModuleAddress(contextInfo->GetProcessHandle(), (LPCVOID)contextInfo->GetRuntimeCRTBaseAddress(), (LPCVOID)contextInfo->GetJITCRTBaseAddress());
-            if (FAILED(hr))
-            {
-                return hr;
-            }
+            return hr;
         }
 
         *threadContextInfoAddress = (PTHREADCONTEXT_HANDLE)EncodePointer(contextInfo);
-        *prereservedRegionAddr = (intptr_t)contextInfo->GetPreReservedSectionAllocator()->EnsurePreReservedRegion();
+
+#if defined(_CONTROL_FLOW_GUARD)
+        if (!PHASE_OFF1(Js::PreReservedHeapAllocPhase))
+        {
+            *prereservedRegionAddr = (intptr_t)contextInfo->GetPreReservedSectionAllocator()->EnsurePreReservedRegion();
+        }
+#if _M_IX86 || _M_X64
+        *jitThunkAddr = (intptr_t)contextInfo->GetJITThunkEmitter()->EnsureInitialized();
+#endif
+#endif
 
         return hr;
     });
@@ -422,11 +444,15 @@ ServerCleanupScriptContext(
         return RPC_S_INVALID_ARG;
     }
 
+    if (!scriptContextInfo->IsClosed())
+    {
+        scriptContextInfo->Close();
+        ServerContextManager::UnRegisterScriptContext(scriptContextInfo);
+    }
     // This tells the run-time, when it is marshalling the out
     // parameters, that the context handle has been closed normally.
     *scriptContextInfoAddress = nullptr;
 
-    Assert(scriptContextInfo->IsClosed());
     HeapDelete(scriptContextInfo);
 
     return S_OK;
@@ -602,7 +628,8 @@ HRESULT
 ServerFreeAllocation(
     /* [in] */ handle_t binding,
     /* [in] */ __RPC__in PTHREADCONTEXT_HANDLE threadContextInfo,
-    /* [in] */ intptr_t address)
+    /* [in] */ intptr_t codeAddress,
+    /* [in] */ intptr_t thunkAddress)
 {
     ServerThreadContext * context = (ServerThreadContext*)DecodePointer(threadContextInfo);
 
@@ -614,11 +641,17 @@ ServerFreeAllocation(
 
     return ServerCallWrapper(context, [&]()->HRESULT
     {
-        if (CONFIG_FLAG(OOPCFGRegistration))
+        if (CONFIG_FLAG(OOPCFGRegistration) && !thunkAddress)
         {
-            context->SetValidCallTargetForCFG((PVOID)address, false);
+            context->SetValidCallTargetForCFG((PVOID)codeAddress, false);
         }
-        context->GetCodeGenAllocators()->emitBufferManager.FreeAllocation((void*)address);
+        context->GetCodeGenAllocators()->emitBufferManager.FreeAllocation((void*)codeAddress);
+#if defined(_CONTROL_FLOW_GUARD) && (_M_IX86 || _M_X64)
+        if (thunkAddress)
+        {
+            context->GetJITThunkEmitter()->FreeThunk(thunkAddress);
+        }
+#endif
         return S_OK;
     });
 }
@@ -772,7 +805,6 @@ ServerRemoteCodeGen(
 #endif
             profiler,
             true);
-
 
 #ifdef PROFILE_EXEC
         if (profiler && profiler->IsInitialized())

@@ -129,7 +129,7 @@ console.log(util.inspect(sandbox));
 event loops and corresponding threads being started, which have a non-zero
 performance overhead.
 
-### script.runInNewContext([sandbox][, options])
+### script.runInNewContext([sandbox[, options]])
 <!-- YAML
 added: v0.3.1
 -->
@@ -442,18 +442,17 @@ to the `http` module passed to it. For instance:
 'use strict';
 const vm = require('vm');
 
-const code =
-`(function(require) {
+const code = `
+(function(require) {
+  const http = require('http');
 
-   const http = require('http');
+  http.createServer((request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    response.end('Hello World\\n');
+  }).listen(8124);
 
-   http.createServer( (request, response) => {
-     response.writeHead(200, {'Content-Type': 'text/plain'});
-     response.end('Hello World\\n');
-   }).listen(8124);
-
-   console.log('Server running at http://127.0.0.1:8124/');
- })`;
+  console.log('Server running at http://127.0.0.1:8124/');
+})`;
 
 vm.runInThisContext(code)(require);
  ```
@@ -474,7 +473,7 @@ According to the [V8 Embedder's Guide][]:
 When the method `vm.createContext()` is called, the `sandbox` object that is
 passed in (or a newly created object if `sandbox` is `undefined`) is associated
 internally with a new instance of a V8 Context. This V8 Context provides the
-`code` run using the `vm` modules methods with an isolated global environment
+`code` run using the `vm` module's methods with an isolated global environment
 within which it can operate. The process of creating the V8 Context and
 associating it with the `sandbox` object is what this document refers to as
 "contextifying" the `sandbox`.

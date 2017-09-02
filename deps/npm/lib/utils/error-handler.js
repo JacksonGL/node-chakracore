@@ -120,7 +120,7 @@ function exit (code, noLog) {
     })
     rollbacks.length = 0
   } else if (code && !noLog) {
-    writeLogFile(reallyExit)
+    writeLogFile()
   } else {
     reallyExit()
   }
@@ -130,10 +130,14 @@ function exit (code, noLog) {
 
     itWorked = !code
 
-    // just emit a fake exit event.
-    // if we're really exiting, then let it exit on its own, so that
-    // in-process stuff can finish or clean up first.
-    if (!doExit) process.emit('exit', code)
+    // Exit directly -- nothing in the CLI should still be running in the
+    // background at this point, and this makes sure anything left dangling
+    // for whatever reason gets thrown away, instead of leaving the CLI open
+    //
+    // Commands that expect long-running actions should just delay `cb()`
+    process.stdout.write('', () => {
+      process.exit(code)
+    })
   }
 }
 

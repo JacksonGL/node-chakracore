@@ -45,11 +45,10 @@ DEFTYPE(Float32Array)
 DEFTYPE(Float64Array)
 DEFTYPE(RegExp)
 DEFTYPE(Map)
-
+DEFTYPE(Symbol)
 
 
 // These prototype functions will be cached/shimmed
-DEFMETHOD(Object,         hasOwnProperty)
 DEFMETHOD(Object,         toString)
 DEFMETHOD(Object,         valueOf)
 DEFMETHOD(String,         concat)

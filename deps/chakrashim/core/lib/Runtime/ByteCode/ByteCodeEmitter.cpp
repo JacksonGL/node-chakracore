@@ -9,13 +9,14 @@
 void EmitReference(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator, FuncInfo *funcInfo);
 void EmitAssignment(ParseNode *asgnNode, ParseNode *lhs, Js::RegSlot rhsLocation, ByteCodeGenerator *byteCodeGenerator, FuncInfo *funcInfo);
 void EmitLoad(ParseNode *rhs, ByteCodeGenerator *byteCodeGenerator, FuncInfo *funcInfo);
-void EmitCall(ParseNode* pnode, Js::RegSlot rhsLocation, ByteCodeGenerator* byteCodeGenerator, FuncInfo* funcInfo, BOOL fReturnValue, BOOL fEvaluateComponents, BOOL fHasNewTarget, Js::RegSlot overrideThisLocation = Js::Constants::NoRegister);
+void EmitCall(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator, FuncInfo* funcInfo, BOOL fReturnValue, BOOL fEvaluateComponents, BOOL fHasNewTarget, Js::RegSlot overrideThisLocation = Js::Constants::NoRegister);
 void EmitSuperFieldPatch(FuncInfo* funcInfo, ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator);
 void EmitYield(Js::RegSlot inputLocation, Js::RegSlot resultLocation, ByteCodeGenerator* byteCodeGenerator, FuncInfo* funcInfo, Js::RegSlot yieldStarIterator = Js::Constants::NoRegister);
 
 void EmitUseBeforeDeclaration(Symbol *sym, ByteCodeGenerator *byteCodeGenerator, FuncInfo *funcInfo);
 void EmitUseBeforeDeclarationRuntimeError(ByteCodeGenerator *byteCodeGenerator, Js::RegSlot location);
 void VisitClearTmpRegs(ParseNode * pnode, ByteCodeGenerator * byteCodeGenerator, FuncInfo * funcInfo);
+void EmitSuperMethodBegin(ParseNode *pnodeTarget, ByteCodeGenerator *byteCodeGenerator, FuncInfo *funcInfo);
 
 bool CallTargetIsArray(ParseNode *pnode)
 {
@@ -1057,6 +1058,9 @@ void ByteCodeGenerator::DefineCachedFunctions(FuncInfo *funcInfoParent)
 
     Js::FuncInfoArray *info = AnewPlus(alloc, extraBytes, Js::FuncInfoArray, slotCount);
 
+    // slotCount is guaranteed to be non-zero here.
+    Js::AuxArray<uint32> * slotIdInCachedScopeToNestedIndexArray = funcInfoParent->GetParsedFunctionBody()->AllocateSlotIdInCachedScopeToNestedIndexArray(slotCount);
+
     slotCount = 0;
 
     auto fillEntries = [&](ParseNode *pnodeFnc)
@@ -1068,6 +1072,8 @@ void ByteCodeGenerator::DefineCachedFunctions(FuncInfo *funcInfoParent)
             Js::FuncInfoEntry *entry = &info->elements[slotCount];
             entry->nestedIndex = pnodeFnc->sxFnc.nestedIndex;
             entry->scopeSlot = sym->GetScopeSlot();
+
+            slotIdInCachedScopeToNestedIndexArray->elements[slotCount] = pnodeFnc->sxFnc.nestedIndex;
             slotCount++;
         }
     };
@@ -1743,9 +1749,13 @@ void ByteCodeGenerator::FinalizeRegisters(FuncInfo * funcInfo, Js::FunctionBody 
 
     this->SetClosureRegisters(funcInfo, byteCodeFunction);
 
-    if (this->IsInDebugMode())
+    if (this->IsInDebugMode() || byteCodeFunction->IsCoroutine())
     {
         // Give permanent registers to the inner scopes in debug mode.
+        // TODO: We create seperate debuggerscopes for each block which has own scope. These are stored in the var registers
+        // allocated below. Ideally we should change this logic to not allocate separate registers for these and save the debug
+        // info in corresponding symbols and use it from there. This will also affect the temp register allocation logic in
+        // EmitOneFunction.
         uint innerScopeCount = funcInfo->InnerScopeCount();
         byteCodeFunction->SetInnerScopeCount(innerScopeCount);
         if (innerScopeCount)
@@ -1981,17 +1991,6 @@ void ByteCodeGenerator::LoadAllConstants(FuncInfo *funcInfo)
         m_writer.RecordFrameDisplayRegister(funcInfo->frameDisplayRegister);
     }
 
-    // new.target may be used to construct the 'this' register so make sure to load it first
-    if (funcInfo->newTargetRegister != Js::Constants::NoRegister)
-    {
-        this->LoadNewTargetObject(funcInfo);
-    }
-
-    if (funcInfo->thisPointerRegister != Js::Constants::NoRegister)
-    {
-        this->LoadThisObject(funcInfo, thisLoadedFromParams);
-    }
-
     this->RecordAllIntConstants(funcInfo);
     this->RecordAllStrConstants(funcInfo);
     this->RecordAllStringTemplateCallsiteConstants(funcInfo);
@@ -2000,6 +1999,11 @@ void ByteCodeGenerator::LoadAllConstants(FuncInfo *funcInfo)
     {
         byteCodeFunction->RecordFloatConstant(byteCodeFunction->MapRegSlot(location), d);
     });
+
+    // WARNING !!!
+    // DO NOT emit any bytecode before loading the heap arguments. This is because those opcodes may bail 
+    // out (unlikely, since opcodes emitted in this function should not correspond to user code, but possible)
+    // and the Jit assumes that there cannot be any bailouts before LdHeapArguments (or its equivalent)
 
     if (funcInfo->GetHasArguments())
     {
@@ -2023,6 +2027,25 @@ void ByteCodeGenerator::LoadAllConstants(FuncInfo *funcInfo)
             GetFormalArgsArray(this, funcInfo, propIds);
             byteCodeFunction->SetPropertyIdsOfFormals(propIds);
         }
+    }
+
+    // Class constructors do not have a [[call]] slot but we don't implement a generic way to express this.
+    // What we do is emit a check for the new flag here. If we don't have CallFlags_New set, the opcode will throw.
+    // We need to do this before emitting 'this' since the base class constructor will try to construct a new object.
+    if (funcInfo->IsClassConstructor())
+    {
+        m_writer.Empty(Js::OpCode::ChkNewCallFlag);
+    }
+
+    // new.target may be used to construct the 'this' register so make sure to load it first
+    if (funcInfo->newTargetRegister != Js::Constants::NoRegister)
+    {
+        this->LoadNewTargetObject(funcInfo);
+    }
+
+    if (funcInfo->thisPointerRegister != Js::Constants::NoRegister)
+    {
+        this->LoadThisObject(funcInfo, thisLoadedFromParams);
     }
 
     //
@@ -2381,7 +2404,7 @@ void ByteCodeGenerator::EmitSuperCall(FuncInfo* funcInfo, ParseNode* pnode, BOOL
     this->Writer()->Reg2(Js::OpCode::Ld_A, thisForSuperCall, funcInfo->newTargetRegister);
 
     this->Writer()->MarkLabel(makeCallLabel);
-    EmitCall(pnode, Js::Constants::NoRegister, this, funcInfo, fReturnValue, /*fEvaluateComponents*/ true, /*fHasNewTarget*/ true, thisForSuperCall);
+    EmitCall(pnode, this, funcInfo, fReturnValue, /*fEvaluateComponents*/ true, /*fHasNewTarget*/ true, thisForSuperCall);
 
     // We have to use another temp for the this value before assigning to this register.
     // This is because IRBuilder does not expect us to use the value of a temp after potentially assigning to that same temp.
@@ -2631,6 +2654,10 @@ void ByteCodeGenerator::EmitThis(FuncInfo *funcInfo, Js::RegSlot fromRegister)
             // via super call chain.
             Js::PropertyId slot = parent->thisScopeSlot;
             EmitInternalScopedSlotLoad(funcInfo, scope, envIndex, slot, funcInfo->thisPointerRegister, false);
+        }
+        else
+        {
+            m_writer.Reg1(Js::OpCode::LdUndef, funcInfo->thisPointerRegister);
         }
     }
     else if (funcInfo->byteCodeFunction->GetIsStrictMode() && (!funcInfo->IsGlobalFunction() || this->flags & fscrEval))
@@ -3176,8 +3203,9 @@ void ByteCodeGenerator::EmitOneFunction(ParseNode *pnode)
 
         // Reserve temp registers for the inner scopes. We prefer temps because the JIT will then renumber them
         // and see different lifetimes. (Note that debug mode requires permanent registers. See FinalizeRegisters.)
+        // Need to revisit the condition when enabling JitES6Generators.
         uint innerScopeCount = funcInfo->InnerScopeCount();
-        if (!this->IsInDebugMode())
+        if (!this->IsInDebugMode() && !byteCodeFunction->IsCoroutine())
         {
             byteCodeFunction->SetInnerScopeCount(innerScopeCount);
             if (innerScopeCount)
@@ -3213,14 +3241,6 @@ void ByteCodeGenerator::EmitOneFunction(ParseNode *pnode)
         this->PushFuncInfo(_u("EmitOneFunction"), funcInfo);
 
         this->inPrologue = true;
-
-        // Class constructors do not have a [[call]] slot but we don't implement a generic way to express this.
-        // What we do is emit a check for the new flag here. If we don't have CallFlags_New set, the opcode will throw.
-        // We need to do this before emitting 'this' since the base class constructor will try to construct a new object.
-        if (funcInfo->IsClassConstructor())
-        {
-            m_writer.Empty(Js::OpCode::ChkNewCallFlag);
-        }
 
         Scope* paramScope = funcInfo->GetParamScope();
         Scope* bodyScope = funcInfo->GetBodyScope();
@@ -3341,8 +3361,10 @@ void ByteCodeGenerator::EmitOneFunction(ParseNode *pnode)
 
         DefineLabels(funcInfo);
 
-        if (pnode->sxFnc.HasNonSimpleParameterList())
+        if (pnode->sxFnc.HasNonSimpleParameterList() || !funcInfo->IsBodyAndParamScopeMerged())
         {
+            Assert(pnode->sxFnc.HasNonSimpleParameterList() || CONFIG_FLAG(ForceSplitScope));
+
             this->InitBlockScopedNonTemps(funcInfo->root->sxFnc.pnodeScopes, funcInfo);
 
             EmitDefaultArgs(funcInfo, pnode);
@@ -3385,8 +3407,9 @@ void ByteCodeGenerator::EmitOneFunction(ParseNode *pnode)
 
         DefineUserVars(funcInfo);
 
-        if (pnode->sxFnc.HasNonSimpleParameterList())
+        if (pnode->sxFnc.HasNonSimpleParameterList() || !funcInfo->IsBodyAndParamScopeMerged())
         {
+            Assert(pnode->sxFnc.HasNonSimpleParameterList() || CONFIG_FLAG(ForceSplitScope));
             this->InitBlockScopedNonTemps(funcInfo->root->sxFnc.pnodeBodyScope, funcInfo);
         }
         else
@@ -3572,6 +3595,19 @@ void ByteCodeGenerator::EmitOneFunction(ParseNode *pnode)
     }
 #endif
 
+    if (!byteCodeFunction->GetSourceContextInfo()->IsDynamic() && byteCodeFunction->GetIsTopLevel() && !(this->flags & fscrEvalCode))
+    {
+        // Add the top level of nested functions to the tracking dictionary. Wait until this point so that all nested functions have gone
+        // through the Emit API so source info, etc., is initialized, and these are not orphaned functions left behind by an unfinished pass.
+        byteCodeFunction->ForEachNestedFunc([&](Js::FunctionProxy * nestedFunc, uint32 i)
+        {
+            if (nestedFunc && nestedFunc->IsDeferredParseFunction() && nestedFunc->GetParseableFunctionInfo()->GetIsDeclaration())
+            {
+                byteCodeFunction->GetUtf8SourceInfo()->TrackDeferredFunction(nestedFunc->GetLocalFunctionId(), nestedFunc->GetParseableFunctionInfo());
+            }
+            return true;
+        });
+    }
 
     byteCodeFunction->SetInitialDefaultEntryPoint();
     byteCodeFunction->SetCompileCount(UInt32Math::Add(byteCodeFunction->GetCompileCount(), 1));
@@ -3975,6 +4011,8 @@ void ByteCodeGenerator::StartEmitFunction(ParseNode *pnodeFnc)
                 funcInfo->frameObjRegister != Js::Constants::NoRegister &&
                 !ApplyEnclosesArgs(pnodeFnc, this) &&
                 funcInfo->IsBodyAndParamScopeMerged() && // There is eval in the param scope
+                !pnodeFnc->sxFnc.HasDefaultArguments() &&
+                !pnodeFnc->sxFnc.HasDestructuredParams() &&
                 (PHASE_FORCE(Js::CachedScopePhase, funcInfo->byteCodeFunction) || !IsInDebugMode())
 #if ENABLE_TTD
                 && !funcInfo->GetParsedFunctionBody()->GetScriptContext()->GetThreadContext()->IsRuntimeInTTDMode()
@@ -5090,17 +5128,17 @@ void ByteCodeGenerator::EmitPropStore(Js::RegSlot rhsLocation, Symbol *sym, Iden
     if (sym == nullptr || sym->GetIsGlobal())
     {
         Js::PropertyId propertyId = sym ? sym->EnsurePosition(this) : pid->GetPropertyId();
+        bool isConsoleScopeLetConst = this->IsConsoleScopeEval() && (isLetDecl || isConstDecl);
         if (this->flags & fscrEval)
         {
             if (funcInfo->byteCodeFunction->GetIsStrictMode() && funcInfo->IsGlobalFunction())
             {
                 uint cacheId = funcInfo->FindOrAddInlineCacheId(funcInfo->frameDisplayRegister, propertyId, false, true);
-                this->m_writer.ElementP(GetScopedStFldOpCode(funcInfo), rhsLocation, cacheId);
+                this->m_writer.ElementP(GetScopedStFldOpCode(funcInfo, isConsoleScopeLetConst), rhsLocation, cacheId);
             }
             else
             {
                 uint cacheId = funcInfo->FindOrAddInlineCacheId(funcInfo->GetEnvRegister(), propertyId, false, true);
-                bool isConsoleScopeLetConst = this->IsConsoleScopeEval() && (isLetDecl || isConstDecl);
                 // In "eval", store to a symbol with unknown scope goes through the closure environment.
                 this->m_writer.ElementP(GetScopedStFldOpCode(funcInfo, isConsoleScopeLetConst), rhsLocation, cacheId);
             }
@@ -5110,7 +5148,7 @@ void ByteCodeGenerator::EmitPropStore(Js::RegSlot rhsLocation, Symbol *sym, Iden
             uint cacheId = funcInfo->FindOrAddInlineCacheId(funcInfo->GetEnvRegister(), propertyId, false, true);
 
             // In "eval", store to a symbol with unknown scope goes through the closure environment.
-            this->m_writer.ElementP(GetScopedStFldOpCode(funcInfo), rhsLocation, cacheId);
+            this->m_writer.ElementP(GetScopedStFldOpCode(funcInfo, isConsoleScopeLetConst), rhsLocation, cacheId);
         }
         else
         {
@@ -6109,6 +6147,8 @@ unsigned int CountArguments(ParseNode *pnode, BOOL *pSideEffect = nullptr)
         }
     }
 
+    AssertOrFailFastMsg(argCount < Js::Constants::UShortMaxValue, "Number of allowed arguments are already capped at parser level");
+
     return argCount;
 }
 
@@ -7083,14 +7123,16 @@ void EmitAssignment(
         // PutValue(x, "y", rhs)
         Js::PropertyId propertyId = lhs->sxBin.pnode2->sxPid.PropertyIdFromNameNode();
 
-        uint cacheId = funcInfo->FindOrAddInlineCacheId(lhs->sxBin.pnode1->location, propertyId, false, true);
+        EmitSuperMethodBegin(lhs, byteCodeGenerator, funcInfo);
         if (lhs->sxBin.pnode1->nop == knopSuper)
         {
             Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdHomeObjProto, funcInfo->superRegister, funcInfo);
+            uint cacheId = funcInfo->FindOrAddInlineCacheId(tmpReg, propertyId, false, true);
             byteCodeGenerator->Writer()->PatchablePropertyWithThisPtr(Js::OpCode::StSuperFld, rhsLocation, tmpReg, funcInfo->thisPointerRegister, cacheId);
         }
         else
         {
+            uint cacheId = funcInfo->FindOrAddInlineCacheId(lhs->sxBin.pnode1->location, propertyId, false, true);
             byteCodeGenerator->Writer()->PatchableProperty(
                 ByteCodeGenerator::GetStFldOpCode(funcInfo, false, false, false, false), rhsLocation, lhs->sxBin.pnode1->location, cacheId);
         }
@@ -7100,9 +7142,16 @@ void EmitAssignment(
 
     case knopIndex:
     {
+        Js::RegSlot targetLocation =
+            (lhs->sxBin.pnode1->nop == knopSuper) ?
+            byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdHomeObjProto, funcInfo->superRegister, funcInfo) :
+            lhs->sxBin.pnode1->location;
+
+        EmitSuperMethodBegin(lhs, byteCodeGenerator, funcInfo);
         byteCodeGenerator->Writer()->Element(
             ByteCodeGenerator::GetStElemIOpCode(funcInfo),
-            rhsLocation, lhs->sxBin.pnode1->location, lhs->sxBin.pnode2->location);
+            rhsLocation, targetLocation, lhs->sxBin.pnode2->location);
+
         break;
     }
 
@@ -7195,7 +7244,7 @@ void EmitLoad(
     case knopCall:
         funcInfo->AcquireLoc(lhs);
         EmitReference(lhs, byteCodeGenerator, funcInfo);
-        EmitCall(lhs, /*rhs=*/ Js::Constants::NoRegister, byteCodeGenerator, funcInfo, /*fReturnValue=*/ false, /*fEvaluateComponents=*/ false, /*fHasNewTarget=*/ false);
+        EmitCall(lhs, byteCodeGenerator, funcInfo, /*fReturnValue=*/ false, /*fEvaluateComponents=*/ false, /*fHasNewTarget=*/ false);
         break;
 
     default:
@@ -7308,7 +7357,6 @@ void EmitArgListStart(
 
 Js::ArgSlot EmitArgListEnd(
     ParseNode *pnode,
-    Js::RegSlot rhsLocation,
     Js::RegSlot thisLocation,
     Js::RegSlot evalLocation,
     Js::RegSlot newTargetLocation,
@@ -7318,28 +7366,14 @@ Js::ArgSlot EmitArgListEnd(
     Js::ProfileId callSiteId)
 {
     BOOL fEvalInModule = false;
-    BOOL fIsPut = (rhsLocation != Js::Constants::NoRegister);
     BOOL fIsEval = (evalLocation != Js::Constants::NoRegister);
     BOOL fHasNewTarget = (newTargetLocation != Js::Constants::NoRegister);
 
+    static const size_t maxExtraArgSlot = 4;  // max(extraEvalArg, extraArg), where extraEvalArg==2 (moduleRoot,env), extraArg==4 (this, eval, evalInModule, newTarget)
+    AssertOrFailFastMsg(argIndex < Js::Constants::UShortMaxValue - maxExtraArgSlot, "Number of allowed arguments are already capped at parser level");
+
     Js::ArgSlot argSlotIndex = (Js::ArgSlot) argIndex;
-    static const Js::ArgSlot maxExtraArgSlot = 4;  // max(extraEvalArg, extraArg), where extraEvalArg==2 (moduleRoot,env), extraArg==4 (this, eval, evalInModule, newTarget)
-
-    // check for integer overflow with margin for increments below to calculate argument count
-    if ((size_t)argSlotIndex != argIndex || argSlotIndex + maxExtraArgSlot < argSlotIndex)
-    {
-        Js::Throw::OutOfMemory();
-    }
-
     Js::ArgSlot evalIndex;
-
-    if (fIsPut)
-    {
-        // Emit the assigned value as an additional operand. Note that the value has already been evaluated.
-        // We just need to emit the ArgOut instruction.
-        argSlotIndex++;
-        byteCodeGenerator->Writer()->ArgOut<true>(argSlotIndex, rhsLocation, callSiteId);
-    }
 
     if (fIsEval && argSlotIndex > 0)
     {
@@ -7410,7 +7444,6 @@ Js::ArgSlot EmitArgListEnd(
 
 Js::ArgSlot EmitArgList(
     ParseNode *pnode,
-    Js::RegSlot rhsLocation,
     Js::RegSlot thisLocation,
     Js::RegSlot newTargetLocation,
     BOOL fIsEval,
@@ -7446,7 +7479,7 @@ Js::ArgSlot EmitArgList(
 
     size_t argIndex = EmitArgs(pnode, fAssignRegs, byteCodeGenerator, funcInfo, callSiteId, spreadIndices == nullptr ? nullptr : *spreadIndices);
 
-    Js::ArgSlot argumentsCount = EmitArgListEnd(pnode, rhsLocation, thisLocation, evalLocation, newTargetLocation, byteCodeGenerator, funcInfo, argIndex, callSiteId);
+    Js::ArgSlot argumentsCount = EmitArgListEnd(pnode, thisLocation, evalLocation, newTargetLocation, byteCodeGenerator, funcInfo, argIndex, callSiteId);
 
     if (fIsEval)
     {
@@ -7591,7 +7624,6 @@ Js::ArgSlot EmitNewObjectOfConstants(
         Js::Constants::NoRegister,
         Js::Constants::NoRegister,
         Js::Constants::NoRegister,
-        Js::Constants::NoRegister,
         byteCodeGenerator,
         funcInfo,
         argCount - 1,
@@ -7668,7 +7700,7 @@ void EmitMethodFld(ParseNode *pnode, Js::RegSlot callObjLocation, Js::PropertyId
 }
 
 // lhs.apply(this, arguments);
-void EmitApplyCall(ParseNode* pnode, Js::RegSlot rhsLocation, ByteCodeGenerator* byteCodeGenerator, FuncInfo* funcInfo, BOOL fReturnValue)
+void EmitApplyCall(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator, FuncInfo* funcInfo, BOOL fReturnValue)
 {
     ParseNode* applyNode = pnode->sxCall.pnodeTarget;
     ParseNode* thisNode = pnode->sxCall.pnodeArgs->sxBin.pnode1;
@@ -7734,7 +7766,7 @@ void EmitApplyCall(ParseNode* pnode, Js::RegSlot rhsLocation, ByteCodeGenerator*
     byteCodeGenerator->LoadHeapArguments(funcInfo);
 
     byteCodeGenerator->Writer()->MarkLabel(argsAlreadyCreated);
-    EmitCall(pnode, rhsLocation, byteCodeGenerator, funcInfo, fReturnValue, /*fEvaluateComponents*/true, /*fHasNewTarget*/false);
+    EmitCall(pnode, byteCodeGenerator, funcInfo, fReturnValue, /*fEvaluateComponents*/true, /*fHasNewTarget*/false);
     byteCodeGenerator->Writer()->MarkLabel(afterSlowPath);
 }
 
@@ -7951,7 +7983,6 @@ void EmitCallTarget(
 void EmitCallI(
     ParseNode *pnode,
     BOOL fEvaluateComponents,
-    BOOL fIsPut,
     BOOL fIsEval,
     BOOL fHasNewTarget,
     uint32 actualArgCount,
@@ -7976,108 +8007,92 @@ void EmitCallI(
         Js::Throw::OutOfMemory();
     }
 
-    if (fIsPut)
+    
+    if (fEvaluateComponents)
     {
-        if (pnode->sxCall.spreadArgCount > 0)
-        {
-            // TODO(tcare): We are disallowing spread with CallIPut for the moment. See DEVDIV2: 876387
-            //              When CallIPut is migrated to the CallIExtended layout, this can be removed.
-            byteCodeGenerator->Writer()->W1(Js::OpCode::RuntimeReferenceError, SCODE_CODE(JSERR_CantAsgCall));
-        }
-        // Grab a tmp register for the call result.
-        Js::RegSlot tmpReg = funcInfo->AcquireTmpRegister();
-        byteCodeGenerator->Writer()->CallI(Js::OpCode::CallIFlags, tmpReg, pnodeTarget->location, actualArgSlotCount, callSiteId, Js::CallFlags::CallFlags_NewTarget);
-        funcInfo->ReleaseTmpRegister(tmpReg);
+        // Release the call target operands we assigned above. If we didn't assign them here,
+        // we'll need them later, so we can't re-use them for the result of the call.
+        funcInfo->ReleaseLoc(pnodeTarget);
+    }
+    // Grab a register for the call result.
+    if (pnode->isUsed)
+    {
+        funcInfo->AcquireLoc(pnode);
+    }
+
+    if (fIsEval)
+    {
+        op = Js::OpCode::CallIExtendedFlags;
+        callFlags = Js::CallFlags::CallFlags_ExtraArg;
     }
     else
     {
-        if (fEvaluateComponents)
+        bool isSuperCall = pnodeTarget->nop == knopSuper;
+
+        if (isSuperCall)
         {
-            // Release the call target operands we assigned above. If we didn't assign them here,
-            // we'll need them later, so we can't re-use them for the result of the call.
-            funcInfo->ReleaseLoc(pnodeTarget);
+            callFlags = Js::CallFlags_New;
         }
-        // Grab a register for the call result.
-        if (pnode->isUsed)
+        if (fHasNewTarget)
         {
-            funcInfo->AcquireLoc(pnode);
-        }
-
-        if (fIsEval)
-        {
-            op = Js::OpCode::CallIExtendedFlags;
-            callFlags = Js::CallFlags::CallFlags_ExtraArg;
-        }
-        else
-        {
-            bool isSuperCall = pnodeTarget->nop == knopSuper;
-
-            if (isSuperCall)
-            {
-                callFlags = Js::CallFlags_New;
-            }
-            if (fHasNewTarget)
-            {
-                callFlags = (Js::CallFlags) (callFlags | Js::CallFlags::CallFlags_ExtraArg | Js::CallFlags::CallFlags_NewTarget);
-            }
-
-            if (pnode->sxCall.spreadArgCount > 0)
-            {
-                op = (isSuperCall || fHasNewTarget) ? Js::OpCode::CallIExtendedFlags : Js::OpCode::CallIExtended;
-            }
-            else
-            {
-                op = (isSuperCall || fHasNewTarget) ? Js::OpCode::CallIFlags : Js::OpCode::CallI;
-            }
-        }
-
-        if (op == Js::OpCode::CallI || op == Js::OpCode::CallIFlags)
-        {
-            if (pnodeTarget->nop == knopSuper)
-            {
-                Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdFuncObjProto, pnodeTarget->location, funcInfo);
-                byteCodeGenerator->Writer()->CallI(op, pnode->location, tmpReg, actualArgSlotCount, callSiteId, callFlags);
-            }
-            else
-            {
-                byteCodeGenerator->Writer()->CallI(op, pnode->location, pnodeTarget->location, actualArgSlotCount, callSiteId, callFlags);
-            }
-        }
-        else
-        {
-            uint spreadIndicesSize = 0;
-            Js::CallIExtendedOptions options = Js::CallIExtended_None;
-
-            if (pnode->sxCall.spreadArgCount > 0)
-            {
-                Assert(spreadIndices != nullptr);
-                spreadExtraAlloc = spreadIndices->count * sizeof(uint32);
-                spreadIndicesSize = sizeof(*spreadIndices) + spreadExtraAlloc;
-                options = Js::CallIExtended_SpreadArgs;
-            }
-
-            if (pnodeTarget->nop == knopSuper)
-            {
-                Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdFuncObjProto, pnodeTarget->location, funcInfo);
-                byteCodeGenerator->Writer()->CallIExtended(op, pnode->location, tmpReg, actualArgSlotCount, options, spreadIndices, spreadIndicesSize, callSiteId, callFlags);
-            }
-            else
-            {
-                byteCodeGenerator->Writer()->CallIExtended(op, pnode->location, pnodeTarget->location, actualArgSlotCount, options, spreadIndices, spreadIndicesSize, callSiteId, callFlags);
-            }
+            callFlags = (Js::CallFlags) (callFlags | Js::CallFlags::CallFlags_ExtraArg | Js::CallFlags::CallFlags_NewTarget);
         }
 
         if (pnode->sxCall.spreadArgCount > 0)
         {
-            Assert(spreadExtraAlloc != 0);
-            AdeletePlus(byteCodeGenerator->GetAllocator(), spreadExtraAlloc, spreadIndices);
+            op = (isSuperCall || fHasNewTarget) ? Js::OpCode::CallIExtendedFlags : Js::OpCode::CallIExtended;
         }
+        else
+        {
+            op = (isSuperCall || fHasNewTarget) ? Js::OpCode::CallIFlags : Js::OpCode::CallI;
+        }
+    }
+
+    if (op == Js::OpCode::CallI || op == Js::OpCode::CallIFlags)
+    {
+        if (pnodeTarget->nop == knopSuper)
+        {
+            Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdFuncObjProto, pnodeTarget->location, funcInfo);
+            byteCodeGenerator->Writer()->CallI(op, pnode->location, tmpReg, actualArgSlotCount, callSiteId, callFlags);
+        }
+        else
+        {
+            byteCodeGenerator->Writer()->CallI(op, pnode->location, pnodeTarget->location, actualArgSlotCount, callSiteId, callFlags);
+        }
+    }
+    else
+    {
+        uint spreadIndicesSize = 0;
+        Js::CallIExtendedOptions options = Js::CallIExtended_None;
+
+        if (pnode->sxCall.spreadArgCount > 0)
+        {
+            Assert(spreadIndices != nullptr);
+            spreadExtraAlloc = spreadIndices->count * sizeof(uint32);
+            spreadIndicesSize = sizeof(*spreadIndices) + spreadExtraAlloc;
+            options = Js::CallIExtended_SpreadArgs;
+        }
+
+        if (pnodeTarget->nop == knopSuper)
+        {
+            Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdFuncObjProto, pnodeTarget->location, funcInfo);
+            byteCodeGenerator->Writer()->CallIExtended(op, pnode->location, tmpReg, actualArgSlotCount, options, spreadIndices, spreadIndicesSize, callSiteId, callFlags);
+        }
+        else
+        {
+            byteCodeGenerator->Writer()->CallIExtended(op, pnode->location, pnodeTarget->location, actualArgSlotCount, options, spreadIndices, spreadIndicesSize, callSiteId, callFlags);
+        }
+    }
+
+    if (pnode->sxCall.spreadArgCount > 0)
+    {
+        Assert(spreadExtraAlloc != 0);
+        AdeletePlus(byteCodeGenerator->GetAllocator(), spreadExtraAlloc, spreadIndices);
     }
 }
 
 void EmitCallInstrNoEvalComponents(
     ParseNode *pnode,
-    BOOL fIsPut,
     BOOL fIsEval,
     Js::RegSlot thisLocation,
     Js::RegSlot callObjLocation,
@@ -8102,14 +8117,14 @@ void EmitCallInstrNoEvalComponents(
         Js::PropertyId propertyId = pnodeTarget->sxBin.pnode2->sxPid.PropertyIdFromNameNode();
 
         EmitMethodFld(pnodeTarget, callObjLocation, propertyId, byteCodeGenerator, funcInfo);
-        EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsPut, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+        EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
     }
     break;
 
     case knopIndex:
     {
         EmitMethodElem(pnodeTarget, pnodeTarget->sxBin.pnode1->location, pnodeTarget->sxBin.pnode2->location, byteCodeGenerator);
-        EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsPut, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+        EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
     }
     break;
 
@@ -8126,21 +8141,20 @@ void EmitCallInstrNoEvalComponents(
 
             Js::PropertyId propertyId = pnodeTarget->sxPid.PropertyIdFromNameNode();
             EmitMethodFld(pnodeTarget, callObjLocation, propertyId, byteCodeGenerator, funcInfo);
-            EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsPut, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+            EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
             break;
         }
     }
     // FALL THROUGH
 
     default:
-        EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsPut, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+        EmitCallI(pnode, /*fEvaluateComponents*/ FALSE, fIsEval, /*fHasNewTarget*/ FALSE, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
         break;
     }
 }
 
 void EmitCallInstr(
     ParseNode *pnode,
-    BOOL fIsPut,
     BOOL fIsEval,
     BOOL fHasNewTarget,
     Js::RegSlot thisLocation,
@@ -8167,7 +8181,7 @@ void EmitCallInstr(
         funcInfo->ReleaseTmpRegister(callObjLocation);
     }
 
-    EmitCallI(pnode, /*fEvaluateComponents*/ TRUE, fIsPut, fIsEval, fHasNewTarget, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+    EmitCallI(pnode, /*fEvaluateComponents*/ TRUE, fIsEval, fHasNewTarget, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
 }
 
 void EmitNew(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator, FuncInfo* funcInfo)
@@ -8177,12 +8191,7 @@ void EmitNew(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator, FuncInfo* f
 
     BOOL fSideEffectArgs = FALSE;
     unsigned int tmpCount = CountArguments(pnode->sxCall.pnodeArgs, &fSideEffectArgs);
-    Assert(argCount == tmpCount);
-
-    if (argCount != (Js::ArgSlot)argCount)
-    {
-        Js::Throw::OutOfMemory();
-    }
+    AssertOrFailFastMsg(argCount == tmpCount, "argCount cannot overflow as max args capped at parser level");
 
     byteCodeGenerator->StartStatement(pnode);
 
@@ -8242,7 +8251,7 @@ void EmitNew(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator, FuncInfo* f
 
 
             Js::AuxArray<uint32> *spreadIndices = nullptr;
-            actualArgCount = EmitArgList(pnode->sxCall.pnodeArgs, Js::Constants::NoRegister, Js::Constants::NoRegister, Js::Constants::NoRegister,
+            actualArgCount = EmitArgList(pnode->sxCall.pnodeArgs, Js::Constants::NoRegister, Js::Constants::NoRegister,
                 false, true, byteCodeGenerator, funcInfo, callSiteId, pnode->sxCall.spreadArgCount, &spreadIndices);
             funcInfo->ReleaseLoc(pnode->sxCall.pnodeTarget);
 
@@ -8273,7 +8282,6 @@ void EmitNew(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerator, FuncInfo* f
 
 void EmitCall(
     ParseNode* pnode,
-    Js::RegSlot rhsLocation,
     ByteCodeGenerator* byteCodeGenerator,
     FuncInfo* funcInfo,
     BOOL fReturnValue,
@@ -8281,7 +8289,6 @@ void EmitCall(
     BOOL fHasNewTarget,
     Js::RegSlot overrideThisLocation)
 {
-    BOOL fIsPut = (rhsLocation != Js::Constants::NoRegister);
     // If the call returns a float, we'll note this in the byte code.
     Js::RegSlot thisLocation = Js::Constants::NoRegister;
     Js::RegSlot callObjLocation = Js::Constants::NoRegister;
@@ -8300,9 +8307,9 @@ void EmitCall(
         return;*/
     }
 
-    unsigned int argCount = CountArguments(pnode->sxCall.pnodeArgs, &fSideEffectArgs) + (unsigned int)fIsPut;
+    unsigned int argCount = CountArguments(pnode->sxCall.pnodeArgs, &fSideEffectArgs);
 
-    BOOL fIsEval = !fIsPut && pnode->sxCall.isEvalCall;
+    BOOL fIsEval = pnode->sxCall.isEvalCall;
 
     if (fIsEval)
     {
@@ -8389,16 +8396,16 @@ void EmitCall(
 
     byteCodeGenerator->Writer()->StartCall(Js::OpCode::StartCall, argSlotCount);
     Js::AuxArray<uint32> *spreadIndices;
-    Js::ArgSlot actualArgCount = EmitArgList(pnodeArgs, rhsLocation, thisLocation, newTargetLocation, fIsEval, fEvaluateComponents, byteCodeGenerator, funcInfo, callSiteId, spreadArgCount, &spreadIndices);
+    Js::ArgSlot actualArgCount = EmitArgList(pnodeArgs, thisLocation, newTargetLocation, fIsEval, fEvaluateComponents, byteCodeGenerator, funcInfo, callSiteId, spreadArgCount, &spreadIndices);
     Assert(argSlotCount == actualArgCount);
 
     if (!fEvaluateComponents)
     {
-        EmitCallInstrNoEvalComponents(pnode, fIsPut, fIsEval, thisLocation, callObjLocation, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+        EmitCallInstrNoEvalComponents(pnode, fIsEval, thisLocation, callObjLocation, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
     }
     else
     {
-        EmitCallInstr(pnode, fIsPut, fIsEval, fHasNewTarget, releaseThisLocation ? thisLocation : Js::Constants::NoRegister, callObjLocation, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
+        EmitCallInstr(pnode, fIsEval, fHasNewTarget, releaseThisLocation ? thisLocation : Js::Constants::NoRegister, callObjLocation, actualArgCount, byteCodeGenerator, funcInfo, callSiteId, spreadIndices);
     }
 
     // End call, pop param space
@@ -10830,11 +10837,11 @@ void Emit(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator, FuncInfo *func
             if (pnode->sxCall.isApplyCall && funcInfo->GetApplyEnclosesArgs())
             {
                 // TODO[ianhall]: Can we remove the ApplyCall bytecode gen time optimization?
-                EmitApplyCall(pnode, Js::Constants::NoRegister, byteCodeGenerator, funcInfo, fReturnValue);
+                EmitApplyCall(pnode, byteCodeGenerator, funcInfo, fReturnValue);
             }
             else
             {
-                EmitCall(pnode, Js::Constants::NoRegister, byteCodeGenerator, funcInfo, fReturnValue, /*fEvaluateComponents*/ true, /*fHasNewTarget*/ false);
+                EmitCall(pnode, byteCodeGenerator, funcInfo, fReturnValue, /*fEvaluateComponents*/ true, /*fHasNewTarget*/ false);
             }
         }
 
@@ -10875,16 +10882,17 @@ void Emit(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator, FuncInfo *func
         Js::RegSlot protoLocation = callObjLocation;
         EmitSuperMethodBegin(pnode, byteCodeGenerator, funcInfo);
 
-        uint cacheId = funcInfo->FindOrAddInlineCacheId(callObjLocation, propertyId, false, false);
         if (pnode->IsCallApplyTargetLoad())
         {
             if (pnode->sxBin.pnode1->nop == knopSuper)
             {
                 Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdHomeObjProto, funcInfo->superRegister, funcInfo);
+                uint cacheId = funcInfo->FindOrAddInlineCacheId(tmpReg, propertyId, false, false);
                 byteCodeGenerator->Writer()->PatchableProperty(Js::OpCode::LdFldForCallApplyTarget, pnode->location, tmpReg, cacheId);
             }
             else
             {
+                uint cacheId = funcInfo->FindOrAddInlineCacheId(callObjLocation, propertyId, false, false);
                 byteCodeGenerator->Writer()->PatchableProperty(Js::OpCode::LdFldForCallApplyTarget, pnode->location, protoLocation, cacheId);
             }
         }
@@ -10893,10 +10901,12 @@ void Emit(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator, FuncInfo *func
             if (pnode->sxBin.pnode1->nop == knopSuper)
             {
                 Js::RegSlot tmpReg = byteCodeGenerator->EmitLdObjProto(Js::OpCode::LdHomeObjProto, funcInfo->superRegister, funcInfo);
+                uint cacheId = funcInfo->FindOrAddInlineCacheId(tmpReg, propertyId, false, false);
                 byteCodeGenerator->Writer()->PatchablePropertyWithThisPtr(Js::OpCode::LdSuperFld, pnode->location, tmpReg, funcInfo->thisPointerRegister, cacheId, isConstructorCall);
             }
             else
             {
+                uint cacheId = funcInfo->FindOrAddInlineCacheId(callObjLocation, propertyId, false, false);
                 byteCodeGenerator->Writer()->PatchableProperty(Js::OpCode::LdFld, pnode->location, callObjLocation, cacheId, isConstructorCall);
             }
         }

@@ -1182,7 +1182,7 @@ FuncInfo * ByteCodeGenerator::StartBindFunction(const char16 *name, uint nameLen
     bool funcExprWithName;
     Js::ParseableFunctionInfo* parseableFunctionInfo = nullptr;
 
-    Js::AutoRestoreFunctionInfo autoRestoreFunctionInfo(reuseNestedFunc, reuseNestedFunc ? reuseNestedFunc->GetOriginalEntryPoint() : nullptr);
+    Js::AutoRestoreFunctionInfo autoRestoreFunctionInfo(reuseNestedFunc, reuseNestedFunc ? reuseNestedFunc->GetOriginalEntryPoint_Unchecked() : nullptr);
 
     if (this->pCurrentFunction &&
         this->pCurrentFunction->IsFunctionParsed())
@@ -1915,11 +1915,7 @@ Js::OpCode ByteCodeGenerator::GetStFldOpCode(FuncInfo* funcInfo, bool isRoot, bo
 /* static */
 Js::OpCode ByteCodeGenerator::GetScopedStFldOpCode(FuncInfo* funcInfo, bool isConsoleScopeLetConst)
 {
-    if (isConsoleScopeLetConst)
-    {
-        return Js::OpCode::ConsoleScopedStFld;
-    }
-    return GetScopedStFldOpCode(funcInfo->GetIsStrictMode());
+    return GetScopedStFldOpCode(funcInfo->GetIsStrictMode(), isConsoleScopeLetConst);
 }
 
 /* static */
@@ -2280,7 +2276,7 @@ void AddArgsToScope(ParseNodePtr pnode, ByteCodeGenerator *byteCodeGenerator, bo
         {
             Assert(false);
         }
-        UInt16Math::Inc(pos);
+        ArgSlotMath::Inc(pos);
     };
 
     // We process rest separately because the number of in args needs to exclude rest.
@@ -2440,7 +2436,7 @@ FuncInfo* PreVisitFunction(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerato
         // Process the formal arguments, even if there's no AST for the body, to support Function.length.
         Js::ArgSlot pos = 1;
         // We skip the rest parameter here because it is not counted towards the in arg count.
-        MapFormalsWithoutRest(pnode, [&](ParseNode *pnode) { UInt16Math::Inc(pos); });
+        MapFormalsWithoutRest(pnode, [&](ParseNode *pnode) { ArgSlotMath::Inc(pos); });
         byteCodeGenerator->SetNumberOfInArgs(pos);
         return funcInfo;
     }
@@ -2477,7 +2473,7 @@ FuncInfo* PreVisitFunction(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerato
 #endif
 
                 //With statements - need scope object to be present.
-                if ((doStackArgsOpt && pnode->sxFnc.funcInfo->GetParamScope()->Count() > 1) && (pnode->sxFnc.funcInfo->HasDeferredChild() || (byteCodeGenerator->GetFlags() & fscrEval) ||
+                if ((doStackArgsOpt && pnode->sxFnc.funcInfo->GetParamScope()->Count() > 1) && ((byteCodeGenerator->GetFlags() & fscrEval) ||
                     pnode->sxFnc.HasWithStmt() || byteCodeGenerator->IsInDebugMode() || PHASE_OFF1(Js::StackArgFormalsOptPhase) || PHASE_OFF1(Js::StackArgOptPhase)))
                 {
                     doStackArgsOpt = false;
@@ -2952,8 +2948,6 @@ FuncInfo* PostVisitFunction(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerat
 
     Js::FunctionBody * parentFunctionBody = parentFunc->byteCodeFunction->GetFunctionBody();
     Assert(parentFunctionBody != nullptr);
-    bool const hasAnyDeferredChild = top->HasDeferredChild() || top->IsDeferred();
-    bool const hasAnyRedeferrableChild = top->HasRedeferrableChild() || top->IsRedeferrable();
     bool setHasNonLocalReference = parentFunctionBody->HasAllNonLocalReferenced();
 
     // If we have any deferred child, we need to instantiate the fake global block scope if it is not empty
@@ -2965,14 +2959,6 @@ FuncInfo* PostVisitFunction(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerat
             if (globalEvalBlockScope->GetHasOwnLocalInClosure())
             {
                 globalEvalBlockScope->SetMustInstantiate(true);
-            }
-            if (hasAnyDeferredChild)
-            {
-                parentFunc->SetHasDeferredChild();
-            }
-            if (hasAnyRedeferrableChild)
-            {
-                parentFunc->SetHasRedeferrableChild();
             }
         }
     }
@@ -2988,18 +2974,6 @@ FuncInfo* PostVisitFunction(ParseNode* pnode, ByteCodeGenerator* byteCodeGenerat
                 parentFunc->GetParamScope()->SetIsObject();
             }
         }
-
-        // Propagate "hasDeferredChild" attribute back to parent.
-        if (hasAnyDeferredChild)
-        {
-            Assert(CONFIG_FLAG(DeferNested));
-            parentFunc->SetHasDeferredChild();
-        }
-        if (hasAnyRedeferrableChild)
-        {
-            parentFunc->SetHasRedeferrableChild();
-        }
-
         // Propagate HasMaybeEscapedNestedFunc
         if (!byteCodeGenerator->CanStackNestedFunc(top, false) ||
             byteCodeGenerator->NeedObjectAsFunctionScope(top, pnode))
@@ -3130,7 +3104,7 @@ void ByteCodeGenerator::ProcessCapturedSym(Symbol *sym)
     FuncInfo *funcHome = sym->GetScope()->GetFunc();
     FuncInfo *funcChild = funcHome->GetCurrentChildFunction();
 
-    Assert(sym->NeedsSlotAlloc(funcHome) || sym->GetIsGlobal() || sym->GetIsModuleImport());
+    Assert(sym->NeedsSlotAlloc(funcHome) || sym->GetIsGlobal() || sym->GetIsModuleImport() || sym->GetIsModuleExportStorage());
 
     // If this is not a local property, or not all its references can be tracked, or
     // it's not scoped to the function, or we're in debug mode, disable the delayed capture optimization.
@@ -3692,6 +3666,8 @@ void PreVisitCatch(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator)
                     item->sxVar.pid->Psz(), sym->GetSymbolTypeName());
             }
 #endif
+            sym->SetIsCatch(true);
+            sym->SetIsBlockVar(true);
         });
     }
     else
@@ -5029,7 +5005,6 @@ void AssignRegisters(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator)
 
         if (nonLambdaFunc != func || (func->IsGlobalFunction() && (byteCodeGenerator->GetFlags() & fscrEval)))
         {
-            nonLambdaFunc->root->sxFnc.SetHasNewTargetReference();
             nonLambdaFunc->AssignNewTargetRegister();
             nonLambdaFunc->SetIsNewTargetLexicallyCaptured();
 
@@ -5063,7 +5038,6 @@ void AssignRegisters(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator)
             {
                 func->AssignNewTargetRegister();
 
-                nonLambdaFunc->root->sxFnc.SetHasNewTargetReference();
                 nonLambdaFunc->AssignNewTargetRegister();
                 nonLambdaFunc->SetIsNewTargetLexicallyCaptured();
                 nonLambdaFunc->AssignUndefinedConstRegister();
@@ -5262,6 +5236,14 @@ void AssignRegisters(ParseNode *pnode, ByteCodeGenerator *byteCodeGenerator)
 #endif
                     auto symName = sym->GetName();
                     sym = funcInfo->bodyScope->FindLocalSymbol(symName);
+
+                    if (sym == nullptr && nop == knopLetDecl && pnode->sxVar.sym->GetIsCatch())
+                    {
+                        // This should be  a scenario like try {} catch([x]) {} with no duplicate definition inside the catch block.
+                        // In non-destructured catch block param case, the created node will be a name node, not a var node.
+                        break;
+                    }
+
                     if (sym == nullptr)
                     {
                         sym = funcInfo->paramScope->FindLocalSymbol(symName);

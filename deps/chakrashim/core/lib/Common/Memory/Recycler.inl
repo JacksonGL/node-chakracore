@@ -281,6 +281,7 @@ Recycler::AllocZeroWithAttributesInlined(DECLSPEC_GUARD_OVERFLOW size_t size)
     return obj;
 }
 
+#ifdef RECYCLER_PAGE_HEAP
 template<ObjectInfoBits attributes>
 bool Recycler::IsPageHeapEnabled(size_t size)
 {
@@ -304,6 +305,7 @@ bool Recycler::IsPageHeapEnabled(size_t size)
     }
     return false;
 }
+#endif
 
 template <ObjectInfoBits attributes, bool isSmallAlloc, bool nothrow>
 inline char*
@@ -402,11 +404,7 @@ Recycler::RealAlloc(HeapInfo* heap, size_t size)
     }
 #endif
 
-    char* addr = LargeAlloc<nothrow>(heap, size, attributes);
-#ifdef RECYCLER_PAGE_HEAP
-    this->VerifyPageHeapFillAfterAlloc(addr, size, attributes);
-#endif
-    return addr;
+    return LargeAlloc<nothrow>(heap, size, attributes);
 }
 
 template<typename T>

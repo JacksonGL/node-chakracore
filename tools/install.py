@@ -89,8 +89,23 @@ def npm_files(action):
     paths = [os.path.join(dirname, basename) for basename in basenames]
     action(paths, target_path + dirname[9:] + '/')
 
-  # create/remove npm invoke script
-  action(['deps/chakrashim/npm'], 'bin/npm')
+  # create/remove symlink
+  link_path = abspath(install_path, 'bin/npm')
+  if action == uninstall:
+    action([link_path], 'bin/npm')
+  elif action == install:
+    try_symlink('../lib/node_modules/npm/bin/npm-cli.js', link_path)
+  else:
+    assert(0) # unhandled action type
+
+  # create/remove symlink
+  link_path = abspath(install_path, 'bin/npx')
+  if action == uninstall:
+    action([link_path], 'bin/npx')
+  elif action == install:
+    try_symlink('../lib/node_modules/npm/bin/npx-cli.js', link_path)
+  else:
+    assert(0) # unhandled action type
 
 def subdir_files(path, dest, action):
   ret = {}

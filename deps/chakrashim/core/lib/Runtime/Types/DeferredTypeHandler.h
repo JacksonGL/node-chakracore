@@ -74,7 +74,7 @@ namespace Js
         DEFINE_GETCPPNAME();
 
     private:
-        DeferredTypeHandler() : DeferredTypeHandlerBase(isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots) { }
+        DeferredTypeHandler() : DeferredTypeHandlerBase(isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots), m_initializer(initializer) { }
 
     public:
         static DeferredTypeHandler *GetDefaultInstance() { return &defaultInstance; }
@@ -87,9 +87,11 @@ namespace Js
         virtual BOOL FindNextProperty(ScriptContext* scriptContext, PropertyIndex& index, JavascriptString** propertyString,
             PropertyId* propertyId, PropertyAttributes* attributes, Type* type, DynamicType *typeToEnumerate, EnumeratorFlags flags, DynamicObject* instance, PropertyValueInfo* info) override;
         virtual PropertyIndex GetPropertyIndex(PropertyRecord const* propertyRecord) override;
+#if ENABLE_NATIVE_CODEGEN
         virtual bool GetPropertyEquivalenceInfo(PropertyRecord const* propertyRecord, PropertyEquivalenceInfo& info) override;
         virtual bool IsObjTypeSpecEquivalent(const Type* type, const TypeEquivalenceRecord& record, uint& failedPropertyIndex) override;
         virtual bool IsObjTypeSpecEquivalent(const Type* type, const EquivalentPropertyEntry* entry) override;
+#endif
         virtual bool EnsureObjectReady(DynamicObject* instance) override;
         virtual BOOL HasProperty(DynamicObject* instance, PropertyId propertyId, __out_opt bool *noRedecl = nullptr) override;
         virtual BOOL HasProperty(DynamicObject* instance, JavascriptString* propertyNameString) override;
@@ -97,6 +99,7 @@ namespace Js
         virtual BOOL GetProperty(DynamicObject* instance, Var originalInstance, JavascriptString* propertyNameString, Var* value, PropertyValueInfo* info, ScriptContext* requestContext) override;
         virtual BOOL SetProperty(DynamicObject* instance, PropertyId propertyId, Var value, PropertyOperationFlags flags, PropertyValueInfo* info) override;
         virtual BOOL SetProperty(DynamicObject* instance, JavascriptString* propertyNameString, Var value, PropertyOperationFlags flags, PropertyValueInfo* info) override;
+        virtual BOOL SetInternalProperty(DynamicObject* instance, PropertyId propertyId, Var value, PropertyOperationFlags flags) override;
         virtual DescriptorFlags GetSetter(DynamicObject* instance, PropertyId propertyId, Var* setterValue, PropertyValueInfo* info, ScriptContext* requestContext) override;
         virtual DescriptorFlags GetSetter(DynamicObject* instance, JavascriptString* propertyNameString, Var* setterValue, PropertyValueInfo* info, ScriptContext* requestContext) override;
         virtual BOOL DeleteProperty(DynamicObject* instance, PropertyId propertyId, PropertyOperationFlags flags) override;
@@ -136,6 +139,9 @@ namespace Js
 
     private:
         static DeferredTypeHandler defaultInstance;
+
+        DeferredTypeInitializer m_initializer;
+
         bool EnsureObjectReady(DynamicObject* instance, DeferredInitializeMode mode);
         virtual BOOL FreezeImpl(DynamicObject *instance, bool isConvertedType) override;
     };
@@ -176,6 +182,7 @@ namespace Js
         return Constants::NoSlot;
     }
 
+#if ENABLE_NATIVE_CODEGEN
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
     bool DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::GetPropertyEquivalenceInfo(PropertyRecord const* propertyRecord, PropertyEquivalenceInfo& info)
     {
@@ -217,6 +224,7 @@ namespace Js
 
         return true;
     }
+#endif
 
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
     bool DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::EnsureObjectReady(DynamicObject* instance)
@@ -227,13 +235,8 @@ namespace Js
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
     bool DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::EnsureObjectReady(DynamicObject* instance, DeferredInitializeMode mode)
     {
-        initializer(instance, this, mode);
-        ThreadContext* threadContext = instance->GetScriptContext()->GetThreadContext();
-        if ((threadContext->GetImplicitCallFlags() > ImplicitCall_None) && threadContext->IsDisableImplicitCall())
-        {
-            return false;
-        }
-        return true;
+        Assert(initializer == m_initializer);
+        return m_initializer(instance, this, mode);
     }
 
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
@@ -246,12 +249,14 @@ namespace Js
 
         if (DeferredTypeFilter::HasFilter() && DeferredTypeFilter::HasProperty(propertyId))
         {
-            return true;
+            return TRUE;
         }
+
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->HasProperty(instance, propertyId, noRedecl);
     }
 
@@ -260,8 +265,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->HasProperty(instance, propertyNameString);
     }
 
@@ -272,13 +278,17 @@ namespace Js
         if (DeferredTypeFilter::HasFilter() && !DeferredTypeFilter::HasProperty(propertyId))
         {
             *value = requestContext->GetMissingPropertyResult();
-            return false;
+            return FALSE;
         }
+
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
             *value = requestContext->GetMissingPropertyResult();
-            return FALSE;
+
+            // Return true so that we stop walking the prototype
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->GetProperty(instance, originalInstance, propertyId, value, info, requestContext);
     }
 
@@ -289,8 +299,11 @@ namespace Js
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
             *value = requestContext->GetMissingPropertyResult();
-            return FALSE;
+
+            // Return true so that we stop walking the prototype
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->GetProperty(instance, originalInstance, propertyNameString, value, info, requestContext);
     }
 
@@ -299,8 +312,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Set))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetProperty(instance, propertyId, value, flags, info);
     }
 
@@ -309,32 +323,57 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Set))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetProperty(instance, propertyNameString, value, flags, info);
+    }
+
+    template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
+    BOOL DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::SetInternalProperty(DynamicObject* instance, PropertyId propertyId, Var value, PropertyOperationFlags flags)
+    {
+        if (!EnsureObjectReady(instance, DeferredInitializeMode_Set))
+        {
+            return TRUE;
+        }
+
+        return GetCurrentTypeHandler(instance)->SetInternalProperty(instance, propertyId, value, flags);
     }
 
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
     DescriptorFlags DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::GetSetter(DynamicObject* instance, PropertyId propertyId, Var* setterValue, PropertyValueInfo* info, ScriptContext* requestContext)
     {
+        if (setterValue != nullptr)
+        {
+            *setterValue = nullptr;
+        }
+
         if (DeferredTypeFilter::HasFilter() && !DeferredTypeFilter::HasProperty(propertyId))
         {
             return DescriptorFlags::None;
         }
+
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
             return DescriptorFlags::None;
         }
+
         return GetCurrentTypeHandler(instance)->GetSetter(instance, propertyId, setterValue, info, requestContext);
     }
 
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
     DescriptorFlags DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::GetSetter(DynamicObject* instance, JavascriptString* propertyNameString, Var* setterValue, PropertyValueInfo* info, ScriptContext* requestContext)
     {
+        if (setterValue != nullptr)
+        {
+            *setterValue = nullptr;
+        }
+
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
             return DescriptorFlags::None;
         }
+
         return GetCurrentTypeHandler(instance)->GetSetter(instance, propertyNameString, setterValue, info, requestContext);
     }
 
@@ -343,8 +382,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->DeleteProperty(instance, propertyId, flags);
     }
 
@@ -353,8 +393,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->HasItem(instance, index);
     }
 
@@ -363,15 +404,19 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetItem(instance, index, value, flags);
     }
 
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
     BOOL DeferredTypeHandler<initializer, DeferredTypeFilter, isPrototypeTemplate, _inlineSlotCapacity, _offsetOfInlineSlots>::SetItemWithAttributes(DynamicObject* instance, uint32 index, Var value, PropertyAttributes attributes)
     {
-        EnsureObjectReady(instance, DeferredInitializeMode_Default);
+        if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
+        {
+            return TRUE;
+        }
         return GetCurrentTypeHandler(instance)->SetItemWithAttributes(instance, index, value, attributes);
     }
 
@@ -380,8 +425,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetItemAttributes(instance, index, attributes);
     }
 
@@ -390,8 +436,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetItemAccessors(instance, index, getter, setter);
     }
 
@@ -400,8 +447,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->DeleteItem(instance, index, flags);
     }
     template <DeferredTypeInitializer initializer, typename DeferredTypeFilter, bool isPrototypeTemplate, uint16 _inlineSlotCapacity, uint16 _offsetOfInlineSlots>
@@ -410,8 +458,9 @@ namespace Js
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
             *value = requestContext->GetMissingItemResult();
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->GetItem(instance, originalInstance, index, value, requestContext);
     }
 
@@ -422,6 +471,7 @@ namespace Js
         {
             return DescriptorFlags::None;
         }
+
         return GetCurrentTypeHandler(instance)->GetItemSetter(instance, index, setterValue, requestContext);
     }
 
@@ -430,8 +480,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->IsEnumerable(instance, propertyId);
     }
 
@@ -440,8 +491,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->IsWritable(instance, propertyId);
     }
 
@@ -450,8 +502,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->IsConfigurable(instance, propertyId);
     }
 
@@ -460,8 +513,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetEnumerable(instance, propertyId, value);
     }
 
@@ -470,8 +524,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetWritable(instance, propertyId, value);
     }
 
@@ -480,8 +535,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetConfigurable(instance, propertyId, value);
     }
 
@@ -490,8 +546,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_SetAccessors))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetAccessors(instance, propertyId, getter, setter, flags);
     }
 
@@ -500,8 +557,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->GetAccessors(instance, propertyId, getter, setter);
     }
 
@@ -510,8 +568,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->IsSealed(instance);
     }
 
@@ -520,8 +579,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->IsFrozen(instance);
     }
 
@@ -530,8 +590,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Extensions))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->PreventExtensions(instance);
     }
 
@@ -540,8 +601,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Extensions))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->Seal(instance);
     }
 
@@ -550,8 +612,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Extensions))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->Freeze(instance, true);
     }
 
@@ -560,8 +623,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Set))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetPropertyWithAttributes(instance, propertyId, value, attributes, info, flags, possibleSideEffects);
     }
 
@@ -570,8 +634,9 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Set))
         {
-            return FALSE;
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->SetAttributes(instance, propertyId, attributes);
     }
 
@@ -580,8 +645,13 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Default))
         {
-            return FALSE;
+            if (attributes)
+            {
+                *attributes = PropertyDynamicTypeDefaults;
+            }
+            return TRUE;
         }
+
         return GetCurrentTypeHandler(instance)->GetAttributesWithPropertyIndex(instance, propertyId, index, attributes);
     }
 
@@ -590,8 +660,10 @@ namespace Js
     {
         if (!EnsureObjectReady(instance, DeferredInitializeMode_Set))
         {
+            AssertOrFailFastMsg(false, "Is this a valid scenario?");
             return nullptr;
         }
+
         return GetCurrentTypeHandler(instance)->ConvertToTypeWithItemAttributes(instance);
     }
 

@@ -11,7 +11,7 @@ var util = require('util')
 var moduleName = require('./utils/module-name.js')
 var Installer = require('./install.js').Installer
 var isExtraneous = require('./install/is-extraneous.js')
-var isDev = require('./install/is-dev-dep.js')
+var isOnlyDev = require('./install/is-only-dev.js')
 var removeDeps = require('./install/deps.js').removeDeps
 var loadExtraneous = require('./install/deps.js').loadExtraneous
 var chain = require('slide').chain
@@ -41,9 +41,7 @@ Pruner.prototype.loadAllDepsIntoIdealTree = function (cb) {
   function shouldPrune (child) {
     if (isExtraneous(child)) return true
     if (!excludeDev) return false
-    var childName = moduleName(child)
-    var isChildDev = function (parent) { return isDev(parent, childName) }
-    if (child.requiredBy.every(isChildDev)) return true
+    return isOnlyDev(child)
   }
   function getModuleName (child) {
     // wrapping because moduleName doesn't like extra args and we're called
@@ -59,7 +57,7 @@ Pruner.prototype.loadAllDepsIntoIdealTree = function (cb) {
   var toPrune = this.idealTree.children.filter(shouldPrune).map(getModuleName).filter(matchesArg).map(nameObj)
 
   steps.push(
-    [removeDeps, toPrune, this.idealTree, null, cg.newGroup('removeDeps')],
+    [removeDeps, toPrune, this.idealTree, null],
     [loadExtraneous, this.idealTree, cg.newGroup('loadExtraneous')])
   chain(steps, cb)
 }

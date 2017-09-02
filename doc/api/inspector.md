@@ -10,6 +10,30 @@ It can be accessed using:
 const inspector = require('inspector');
 ```
 
+## inspector.open([port[, host[, wait]]])
+
+* port {number} Port to listen on for inspector connections. Optional,
+  defaults to what was specified on the CLI.
+* host {string} Host to listen on for inspector connections. Optional,
+  defaults to what was specified on the CLI.
+* wait {boolean} Block until a client has connected. Optional, defaults
+  to false.
+
+Activate inspector on host and port. Equivalent to `node
+--inspect=[[host:]port]`, but can be done programatically after node has
+started.
+
+If wait is `true`, will block until a client has connected to the inspect port
+and flow control has been passed to the debugger client.
+
+### inspector.close()
+
+Deactivate the inspector. Blocks until there are no active connections.
+
+### inspector.url()
+
+Return the URL of the active inspector, or `undefined` if there is none.
+
 ## Class: inspector.Session
 
 The `inspector.Session` is used for dispatching messages to the V8 inspector
@@ -17,7 +41,7 @@ back-end and receiving message responses and notifications.
 
 ### Constructor: new inspector.Session()
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Create a new instance of the `inspector.Session` class. The inspector session
@@ -28,7 +52,7 @@ can be dispatched to the inspector backend.
 
 ### Event: 'inspectorNotification'
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 * {Object} The notification message object
@@ -45,7 +69,7 @@ It is also possible to subscribe only to notifications with specific method:
 
 ### Event: &lt;inspector-protocol-method&gt;
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 * {Object} The notification message object
@@ -58,13 +82,15 @@ event, and prints the reason for program suspension whenever program
 execution is suspended (through breakpoints, for example):
 
 ```js
-session.on('Debugger.paused', ({params}) => console.log(params.hitBreakpoints));
+session.on('Debugger.paused', ({ params }) => {
+  console.log(params.hitBreakpoints);
+});
 // [ '/node/test/inspector/test-bindings.js:11:0' ]
 ```
 
 ### session.connect()
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Connects a session to the inspector back-end. An exception will be thrown
@@ -73,7 +99,7 @@ a front-end connected to the Inspector WebSocket port.
 
 ### session.post(method[, params][, callback])
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 * method {string}
@@ -100,7 +126,7 @@ to the run-time events.
 
 ### session.disconnect()
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Immediately close the session. All pending message callbacks will be called
@@ -108,7 +134,8 @@ with an error. [`session.connect()`] will need to be called to be able to send
 messages again. Reconnected session will lose all inspector state, such as
 enabled agents or configured breakpoints.
 
-[`session.connect()`]: #sessionconnect
+
+[`session.connect()`]: #inspector_session_connect
 [`Debugger.paused`]: https://chromedevtools.github.io/devtools-protocol/v8/Debugger/#event-paused
 [`EventEmitter`]: events.html#events_class_eventemitter
 [Chrome DevTools Protocol Viewer]: https://chromedevtools.github.io/devtools-protocol/v8/

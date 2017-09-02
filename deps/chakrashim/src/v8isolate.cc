@@ -27,7 +27,7 @@ namespace v8 {
 HeapProfiler dummyHeapProfiler;
 CpuProfiler dummyCpuProfiler;
 
-Isolate* Isolate::NewWithTTDSupport(const CreateParams& params, 
+Isolate* Isolate::NewWithTTDSupport(const CreateParams& params,
                       size_t optReplayUriLength, const char* optReplayUri,
                       bool doRecord, bool doReplay, bool doDebug, bool doAllocTrace,
                       uint32_t snapInterval, uint32_t snapHistoryLength) {
@@ -144,6 +144,13 @@ void Isolate::SetJitCodeEventHandler(JitCodeEventOptions options,
                                      JitCodeEventHandler event_handler) {
   // CHAKRA-TODO: This is for ETW events, we don't have equivalent but might not
   // need it because we do our own ETW tracing.
+}
+
+void Isolate::EnqueueMicrotask(MicrotaskCallback microtask, void* data) {
+  // CHAKRA-TODO: Current microTask implementation only support queueing
+  // javascript functions. Need to add support to queue native functions
+  // And update dequeue code to check and call appropriate function
+  // (native vs. javascript)
 }
 
 void Isolate::RunMicrotasks() {

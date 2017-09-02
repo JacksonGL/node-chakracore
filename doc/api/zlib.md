@@ -43,6 +43,13 @@ zlib.unzip(buffer, (err, buffer) => {
 });
 ```
 
+## Threadpool Usage
+
+Note that all zlib APIs except those that are explicitly synchronous use libuv's
+threadpool, which can have surprising and negative performance implications for
+some applications, see the [`UV_THREADPOOL_SIZE`][] documentation for more
+information.
+
 ## Compressing HTTP requests and responses
 
 The `zlib` module can be used to implement support for the `gzip` and `deflate`
@@ -102,10 +109,10 @@ http.createServer((request, response) => {
 
   // Note: This is not a conformant accept-encoding parser.
   // See http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.3
-  if (acceptEncoding.match(/\bdeflate\b/)) {
+  if (/\bdeflate\b/.test(acceptEncoding)) {
     response.writeHead(200, { 'Content-Encoding': 'deflate' });
     raw.pipe(zlib.createDeflate()).pipe(response);
-  } else if (acceptEncoding.match(/\bgzip\b/)) {
+  } else if (/\bgzip\b/.test(acceptEncoding)) {
     response.writeHead(200, { 'Content-Encoding': 'gzip' });
     raw.pipe(zlib.createGzip()).pipe(response);
   } else {
@@ -119,7 +126,7 @@ By default, the `zlib` methods will throw an error when decompressing
 truncated data. However, if it is known that the data is incomplete, or
 the desire is to inspect only the beginning of a compressed file, it is
 possible to suppress the default error handling by changing the flushing
-method that is used to compressed the last chunk of input data:
+method that is used to decompress the last chunk of input data:
 
 ```js
 // This is a truncated version of the buffer from the above examples
@@ -127,7 +134,7 @@ const buffer = Buffer.from('eJzT0yMA', 'base64');
 
 zlib.unzip(
   buffer,
-  {finishFlush: zlib.constants.Z_SYNC_FLUSH},
+  { finishFlush: zlib.constants.Z_SYNC_FLUSH },
   (err, buffer) => {
     if (!err) {
       console.log(buffer.toString());
@@ -277,7 +284,7 @@ Compression strategy.
 <!-- YAML
 added: v0.11.1
 changes:
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `dictionary` option can be an Uint8Array now.
   - version: v5.11.0
@@ -301,6 +308,7 @@ ignored by the decompression classes.
 * `strategy` {integer} (compression only)
 * `dictionary` {Buffer|TypedArray|DataView} (deflate/inflate only, empty dictionary by
   default)
+* `info` {boolean} (If `true`, returns an object with `buffer` and `engine`)
 
 See the description of `deflateInit2` and `inflateInit2` at
 <http://zlib.net/manual.html#Advanced> for more information on these.
@@ -385,6 +393,17 @@ added: v0.5.8
 Not exported by the `zlib` module. It is documented here because it is the base
 class of the compressor/decompressor classes.
 
+### zlib.bytesRead
+<!-- YAML
+added: REPLACEME
+-->
+
+* {number}
+
+The `zlib.bytesRead` property specifies the number of bytes read by the engine
+before the bytes are processed (compressed or decompressed, as appropriate for
+the derived class).
+
 ### zlib.flush([kind], callback)
 <!-- YAML
 added: v0.5.8
@@ -428,14 +447,14 @@ Provides an object enumerating Zlib-related constants.
 added: v0.5.8
 -->
 
-Returns a new [Deflate][] object with an [options][].
+Creates and returns a new [Deflate][] object with the given [options][].
 
 ## zlib.createDeflateRaw([options])
 <!-- YAML
 added: v0.5.8
 -->
 
-Returns a new [DeflateRaw][] object with an [options][].
+Creates and returns a new [DeflateRaw][] object with the given [options][].
 
 *Note*: The zlib library rejects requests for 256-byte windows (i.e.,
 `{ windowBits: 8 }` in `options`). An `Error` will be thrown when creating
@@ -446,35 +465,35 @@ a [DeflateRaw][] object with this specific value of the `windowBits` option.
 added: v0.5.8
 -->
 
-Returns a new [Gunzip][] object with an [options][].
+Creates and returns a new [Gunzip][] object with the given [options][].
 
 ## zlib.createGzip([options])
 <!-- YAML
 added: v0.5.8
 -->
 
-Returns a new [Gzip][] object with an [options][].
+Creates and returns a new [Gzip][] object with the given [options][].
 
 ## zlib.createInflate([options])
 <!-- YAML
 added: v0.5.8
 -->
 
-Returns a new [Inflate][] object with an [options][].
+Creates and returns a new [Inflate][] object with the given [options][].
 
 ## zlib.createInflateRaw([options])
 <!-- YAML
 added: v0.5.8
 -->
 
-Returns a new [InflateRaw][] object with an [options][].
+Creates and returns a new [InflateRaw][] object with the given [options][].
 
 ## zlib.createUnzip([options])
 <!-- YAML
 added: v0.5.8
 -->
 
-Returns a new [Unzip][] object with an [options][].
+Creates and returns a new [Unzip][] object with the given [options][].
 
 ## Convenience Methods
 
@@ -491,10 +510,10 @@ without a callback.
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -502,10 +521,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -518,10 +537,10 @@ Compress a chunk of data with [Deflate][].
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -529,10 +548,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -545,10 +564,10 @@ Compress a chunk of data with [DeflateRaw][].
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -556,10 +575,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -572,10 +591,10 @@ Decompress a chunk of data with [Gunzip][].
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -583,10 +602,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -599,10 +618,10 @@ Compress a chunk of data with [Gzip][].
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -610,10 +629,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -626,10 +645,10 @@ Decompress a chunk of data with [Inflate][].
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -637,10 +656,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -653,10 +672,10 @@ Decompress a chunk of data with [InflateRaw][].
 <!-- YAML
 added: v0.6.0
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->
@@ -664,10 +683,10 @@ changes:
 <!-- YAML
 added: v0.11.12
 changes:
-  - version: REPLACEME
-    pr-url: REPLACEME
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/12223
     description: The `buffer` parameter can be any TypedArray or DataView now.
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12001
     description: The `buffer` parameter can be an Uint8Array now.
 -->

@@ -11,11 +11,10 @@ class WasmMath
 {
 public:
     template<typename T> static int Eqz(T value);
-    template<typename T> static T Rem( T aLeft, T aRight );
     template<typename T> static T Shl( T aLeft, T aRight );
     template<typename T> static T Shr( T aLeft, T aRight );
     template<typename T> static T ShrU( T aLeft, T aRight );
-    template<typename T> static T Copysign(T aLeft, T aRight);
+    template<typename T> static T VECTORCALL Copysign(T aLeft, T aRight);
     template<typename T> static T Trunc(T aLeft);
     template<typename T> static T Nearest(T aLeft);
     template<typename T> static T PopCnt(T value);

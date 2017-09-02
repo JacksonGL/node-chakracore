@@ -5,6 +5,13 @@ const common = require('../common');
 const errors = require('internal/errors');
 const assert = require('assert');
 
+const errMessages = {
+  objectString: /^'object' === 'string'$/,
+  booleanString: /^'boolean' === 'string'$/,
+  numberString: /^'number' === 'string'$/,
+  invalidKey: /^An invalid error message key was used: TEST_FOO_KEY\.$/,
+};
+
 errors.E('TEST_ERROR_1', 'Error for testing purposes: %s');
 errors.E('TEST_ERROR_2', (a, b) => `${a} ${b}`);
 
@@ -43,86 +50,86 @@ assert.throws(
   () => new errors.Error('TEST_FOO_KEY'),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^An invalid error message key was used: TEST_FOO_KEY\.$/
+    message: errMessages.invalidKey
   }));
 // Calling it twice yields same result (using the key does not create it)
 assert.throws(
   () => new errors.Error('TEST_FOO_KEY'),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^An invalid error message key was used: TEST_FOO_KEY\.$/
+    message: errMessages.invalidKey
   }));
 assert.throws(
   () => new errors.Error(1),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'number' === 'string'$/
+    message: errMessages.numberString
   }));
 assert.throws(
   () => new errors.Error({}),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'object' === 'string'$/
+    message: errMessages.objectString
   }));
 assert.throws(
   () => new errors.Error([]),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'object' === 'string'$/
+    message: errMessages.objectString
   }));
 assert.throws(
   () => new errors.Error(true),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'boolean' === 'string'$/
+    message: errMessages.booleanString
   }));
 assert.throws(
   () => new errors.TypeError(1),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'number' === 'string'$/
+    message: errMessages.numberString
   }));
 assert.throws(
   () => new errors.TypeError({}),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'object' === 'string'$/
+    message: errMessages.objectString
   }));
 assert.throws(
   () => new errors.TypeError([]),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'object' === 'string'$/
+    message: errMessages.objectString
   }));
 assert.throws(
   () => new errors.TypeError(true),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'boolean' === 'string'$/
+    message: errMessages.booleanString
   }));
 assert.throws(
   () => new errors.RangeError(1),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'number' === 'string'$/
+    message: errMessages.numberString
   }));
 assert.throws(
   () => new errors.RangeError({}),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'object' === 'string'$/
+    message: errMessages.objectString
   }));
 assert.throws(
   () => new errors.RangeError([]),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'object' === 'string'$/
+    message: errMessages.objectString
   }));
 assert.throws(
   () => new errors.RangeError(true),
   common.expectsError({
     code: 'ERR_ASSERTION',
-    message: /^'boolean' === 'string'$/
+    message: errMessages.booleanString
   }));
 
 
@@ -159,7 +166,7 @@ assert.throws(() => {
   }, common.expectsError({ code: 'TEST_ERROR_1', type: RangeError }));
 }, common.expectsError({
   code: 'ERR_ASSERTION',
-  message: /^.+ is not the expected type \S/
+  message: /^.+ is not instance of \S/
 }));
 
 assert.throws(() => {
@@ -222,3 +229,46 @@ assert.throws(
     code: 'ERR_ASSERTION',
     message: /^At least one arg needs to be specified$/
   }));
+
+
+// Test ERR_TLS_CERT_ALTNAME_INVALID
+assert.strictEqual(
+  errors.message('ERR_TLS_CERT_ALTNAME_INVALID', ['altname']),
+  'Hostname/IP does not match certificate\'s altnames: altname');
+
+assert.strictEqual(
+  errors.message('ERR_INVALID_PROTOCOL', ['bad protocol', 'http']),
+  'Protocol "bad protocol" not supported. Expected "http"'
+);
+
+assert.strictEqual(
+  errors.message('ERR_HTTP_HEADERS_SENT', ['render']),
+  'Cannot render headers after they are sent to the client'
+);
+
+assert.strictEqual(
+  errors.message('ERR_INVALID_DOMAIN_NAME'),
+  'Unable to determine the domain name'
+);
+
+assert.strictEqual(
+  errors.message('ERR_INVALID_HTTP_TOKEN', ['Method', 'foo']),
+  'Method must be a valid HTTP token ["foo"]'
+);
+
+assert.strictEqual(
+  errors.message('ERR_UNESCAPED_CHARACTERS', ['Request path']),
+  'Request path contains unescaped characters'
+);
+
+
+// Test error messages for async_hooks
+assert.strictEqual(
+  errors.message('ERR_ASYNC_CALLBACK', ['init']),
+  'init must be a function');
+assert.strictEqual(
+  errors.message('ERR_ASYNC_TYPE', [{}]),
+  'Invalid name for async "type": [object Object]');
+assert.strictEqual(
+  errors.message('ERR_INVALID_ASYNC_ID', ['asyncId', undefined]),
+  'Invalid asyncId value: undefined');

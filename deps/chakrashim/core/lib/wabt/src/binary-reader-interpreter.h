@@ -21,16 +21,22 @@
 
 namespace wabt {
 
-struct DefinedInterpreterModule;
-struct InterpreterEnvironment;
+namespace interpreter {
+
+struct DefinedModule;
+class Environment;
+
+} // namespace interpreter
+
+class ErrorHandler;
 struct ReadBinaryOptions;
 
-Result read_binary_interpreter(struct InterpreterEnvironment* env,
-                               const void* data,
-                               size_t size,
-                               const struct ReadBinaryOptions* options,
-                               BinaryErrorHandler*,
-                               DefinedInterpreterModule** out_module);
+Result ReadBinaryInterpreter(interpreter::Environment* env,
+                             const void* data,
+                             size_t size,
+                             const ReadBinaryOptions* options,
+                             ErrorHandler*,
+                             interpreter::DefinedModule** out_module);
 
 }  // namespace wabt
 

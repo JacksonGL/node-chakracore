@@ -151,7 +151,7 @@ Throw errors for deprecations.
 
 ### `--pending-deprecation`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Emit pending deprecation warnings.
@@ -170,13 +170,28 @@ added: v6.0.0
 
 Silence all process warnings (including deprecations).
 
+### `--expose-http2`
+<!-- YAML
+added: v8.4.0
+-->
+
+Enable the experimental `'http2'` module.
+
 ### `--napi-modules`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Enable loading native modules compiled with the ABI-stable Node.js API (N-API)
 (experimental).
+
+### `--abort-on-uncaught-exception`
+<!-- YAML
+added: v0.10
+-->
+
+Aborting instead of exiting causes a core file to be generated for post-mortem
+analysis using a debugger (such as `lldb`, `gdb`, and `mdb`).
 
 ### `--trace-warnings`
 <!-- YAML
@@ -187,7 +202,7 @@ Print stack traces for process warnings (including deprecations).
 
 ### `--redirect-warnings=file`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Write process warnings to the given file instead of printing to stderr. The
@@ -333,19 +348,19 @@ used to enable FIPS-compliant crypto if Node.js is built with
 
 ### `--use-openssl-ca`, `--use-bundled-ca`
 <!-- YAML
-added: v7.5.0
+added: v6.11.0
 -->
 
 Use OpenSSL's default CA store or use bundled Mozilla CA store as supplied by
-current NodeJS version. The default store is selectable at build-time.
+current Node.js version. The default store is selectable at build-time.
 
 Using OpenSSL store allows for external modifications of the store. For most
 Linux and BSD distributions, this store is maintained by the distribution
 maintainers and system administrators. OpenSSL CA store location is dependent on
 configuration of the OpenSSL library but this can be altered at runtime using
-environmental variables.
+environment variables.
 
-The bundled CA store, as supplied by NodeJS, is a snapshot of Mozilla CA store
+The bundled CA store, as supplied by Node.js, is a snapshot of Mozilla CA store
 that is fixed at release time. It is identical on all supported platforms.
 
 See `SSL_CERT_DIR` and `SSL_CERT_FILE`.
@@ -360,7 +375,7 @@ Specify ICU data load path. (overrides `NODE_ICU_DATA`)
 
 ### `-`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Alias for stdin, analogous to the use of - in other command line utilities,
@@ -370,7 +385,7 @@ are passed to that script.
 
 ### `--`
 <!-- YAML
-added: v7.5.0
+added: v6.11.0
 -->
 
 Indicate the end of node options. Pass the rest of the arguments to the script.
@@ -415,20 +430,20 @@ with small-icu support.
 
 ### `NODE_NO_WARNINGS=1`
 <!-- YAML
-added: v7.5.0
+added: v6.11.0
 -->
 
 When set to `1`, process warnings are silenced.
 
 ### `NODE_OPTIONS=options...`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
-`options...` are interpreted as if they had been specified on the command line
-before the actual command line (so they can be overriden).  Node will exit with
-an error if an option that is not allowed in the environment is used, such as
-`-p` or a script file.
+A space-separated list of command line options. `options...` are interpreted as
+if they had been specified on the command line before the actual command line
+(so they can be overridden).  Node will exit with an error if an option that is
+not allowed in the environment is used, such as `-p` or a script file.
 
 Node options that are allowed are:
 - `--enable-fips`
@@ -457,11 +472,12 @@ Node options that are allowed are:
 - `--zero-fill-buffers`
 
 V8 options that are allowed are:
-- `--max_old_space_size`
+- `--abort-on-uncaught-exception`
+- `--max-old-space-size`
 
 ### `NODE_PENDING_DEPRECATION=1`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 When set to `1`, emit pending deprecation warnings.
@@ -507,12 +523,12 @@ options property is explicitly specified for a TLS or HTTPS client or server.
 
 ### `OPENSSL_CONF=file`
 <!-- YAML
-added: v7.7.0
+added: v6.11.0
 -->
 
 Load an OpenSSL configuration file on startup. Among other uses, this can be
 used to enable FIPS-compliant crypto if Node.js is built with `./configure
-\-\-openssl\-fips`.
+--openssl-fips`.
 
 If the [`--openssl-config`][] command line option is used, the environment
 variable is ignored.
@@ -526,7 +542,7 @@ If `--use-openssl-ca` is enabled, this overrides and sets OpenSSL's directory
 containing trusted certificates.
 
 *Note*: Be aware that unless the child environment is explicitly set, this
-evironment variable will be inherited by any child processes, and if they use
+environment variable will be inherited by any child processes, and if they use
 OpenSSL, it may cause them to trust the same CAs as node.
 
 ### `SSL_CERT_FILE=file`
@@ -538,12 +554,12 @@ If `--use-openssl-ca` is enabled, this overrides and sets OpenSSL's file
 containing trusted certificates.
 
 *Note*: Be aware that unless the child environment is explicitly set, this
-evironment variable will be inherited by any child processes, and if they use
+environment variable will be inherited by any child processes, and if they use
 OpenSSL, it may cause them to trust the same CAs as node.
 
 ### `NODE_REDIRECT_WARNINGS=file`
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 When set, process warnings will be emitted to the given file instead of
@@ -552,10 +568,35 @@ appended to if it does. If an error occurs while attempting to write the
 warning to the file, the warning will be written to stderr instead. This is
 equivalent to using the `--redirect-warnings=file` command-line flag.
 
+### `UV_THREADPOOL_SIZE=size`
+
+Set the number of threads used in libuv's threadpool to `size` threads.
+
+Asynchronous system APIs are used by Node.js whenever possible, but where they
+do not exist, libuv's threadpool is used to create asynchronous node APIs based
+on synchronous system APIs. Node.js APIs that use the threadpool are:
+
+- all `fs` APIs, other than the file watcher APIs and those that are explicitly
+  synchronous
+- `crypto.pbkdf2()`
+- `crypto.randomBytes()`, unless it is used without a callback
+- `crypto.randomFill()`
+- `dns.lookup()`
+- all `zlib` APIs, other than those that are explicitly synchronous
+
+Because libuv's threadpool has a fixed size, it means that if for whatever
+reason any of these APIs takes a long time, other (seemingly unrelated) APIs
+that run in libuv's threadpool will experience degraded performance. In order to
+mitigate this issue, one potential solution is to increase the size of libuv's
+threadpool by setting the `'UV_THREADPOOL_SIZE'` environment variable to a value
+greater than `4` (its current default value).  For more information, see the
+[libuv threadpool documentation][].
+
 [`--openssl-config`]: #cli_openssl_config_file
 [Buffer]: buffer.html#buffer_buffer
 [Chrome Debugging Protocol]: https://chromedevtools.github.io/debugger-protocol-viewer
 [REPL]: repl.html
 [SlowBuffer]: buffer.html#buffer_class_slowbuffer
 [debugger]: debugger.html
-[emit_warning]: process.html#process_process_emitwarning_warning_name_ctor
+[emit_warning]: process.html#process_process_emitwarning_warning_type_code_ctor
+[libuv threadpool documentation]: http://docs.libuv.org/en/latest/threadpool.html

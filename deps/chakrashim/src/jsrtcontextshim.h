@@ -18,6 +18,9 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 // IN THE SOFTWARE.
 
+#ifndef DEPS_CHAKRASHIM_SRC_JSRTCONTEXTSHIM_H_
+#define DEPS_CHAKRASHIM_SRC_JSRTCONTEXTSHIM_H_
+
 #include <vector>
 
 namespace jsrt {
@@ -78,7 +81,6 @@ class ContextShim {
   JsValueRef GetMapConstructor();
   JsValueRef GetGlobalType(GlobalType index);
 
-  JsValueRef GetHasOwnPropertyFunction();
   JsValueRef GetToStringFunction();
   JsValueRef GetValueOfFunction();
   JsValueRef GetStringConcatFunction();
@@ -102,7 +104,6 @@ class ContextShim {
   bool InitializeBuiltIns();
   bool InitializeProxyOfGlobal();
   bool InitializeGlobalPrototypeFunctions();
-  bool InitializeObjectPrototypeToStringShim();
 
   template <typename Fn>
   bool InitializeBuiltIn(JsValueRef * builtInValue, Fn getBuiltIn);
@@ -138,9 +139,9 @@ class ContextShim {
   std::vector<void*> embedderData;
 
 #define DECLARE_CHAKRASHIM_FUNCTION_GETTER(F) \
-public: \
+ public: \
   JsValueRef Get##F##Function(); \
-private: \
+ private: \
   JsValueRef F##Function; \
 
 #define DEF_IS_TYPE(F) DECLARE_CHAKRASHIM_FUNCTION_GETTER(F)
@@ -164,6 +165,10 @@ private: \
   DECLARE_CHAKRASHIM_FUNCTION_GETTER(dequeueMicrotask);
   DECLARE_CHAKRASHIM_FUNCTION_GETTER(getPropertyAttributes);
   DECLARE_CHAKRASHIM_FUNCTION_GETTER(getOwnPropertyNames);
+  DECLARE_CHAKRASHIM_FUNCTION_GETTER(jsonParse);
+  DECLARE_CHAKRASHIM_FUNCTION_GETTER(jsonStringify);
 };
 
 }  // namespace jsrt
+
+#endif  // DEPS_CHAKRASHIM_SRC_JSRTCONTEXTSHIM_H_

@@ -10,7 +10,7 @@ napi_value GetValue(napi_env env, napi_callback_info info) {
   NAPI_ASSERT(env, argc == 0, "Wrong number of arguments");
 
   napi_value number;
-  NAPI_CALL(env, napi_create_number(env, value_, &number));
+  NAPI_CALL(env, napi_create_double(env, value_, &number));
 
   return number;
 }
@@ -61,13 +61,31 @@ napi_value HasNamedProperty(napi_env env, napi_callback_info info) {
 
 void Init(napi_env env, napi_value exports, napi_value module, void* priv) {
   napi_value number;
-  NAPI_CALL_RETURN_VOID(env, napi_create_number(env, value_, &number));
+  NAPI_CALL_RETURN_VOID(env, napi_create_double(env, value_, &number));
+
+  napi_value name_value;
+  NAPI_CALL_RETURN_VOID(env, napi_create_string_utf8(env,
+                                                     "NameKeyValue",
+                                                     -1,
+                                                     &name_value));
+
+  napi_value symbol_description;
+  napi_value name_symbol;
+  NAPI_CALL_RETURN_VOID(env, napi_create_string_utf8(env,
+                                                     "NameKeySymbol",
+                                                      -1,
+                                                     &symbol_description));
+  NAPI_CALL_RETURN_VOID(env, napi_create_symbol(env,
+                                                symbol_description,
+                                                &name_symbol));
 
   napi_property_descriptor properties[] = {
     { "echo", 0, Echo, 0, 0, 0, napi_enumerable, 0 },
     { "readwriteValue", 0, 0, 0, 0, number, napi_enumerable | napi_writable, 0 },
     { "readonlyValue", 0, 0, 0, 0, number, napi_enumerable, 0},
     { "hiddenValue", 0, 0, 0, 0, number, napi_default, 0},
+    { NULL, name_value, 0, 0, 0, number, napi_enumerable, 0},
+    { NULL, name_symbol, 0, 0, 0, number, napi_enumerable, 0},
     { "readwriteAccessor1", 0, 0, GetValue, SetValue, 0, napi_default, 0},
     { "readwriteAccessor2", 0, 0, GetValue, SetValue, 0, napi_writable, 0},
     { "readonlyAccessor1", 0, 0, GetValue, NULL, 0, napi_default, 0},

@@ -9,8 +9,14 @@ npm gets its configuration values from the following sources, sorted by priority
 
 Putting `--foo bar` on the command line sets the `foo` configuration
 parameter to `"bar"`.  A `--` argument tells the cli parser to stop
-reading flags.  A `--flag` parameter that is at the *end* of the
-command will be given the value of `true`.
+reading flags.  Using `--flag` without specifying any value will set
+the value to `true`.
+
+Example: `--flag1 --flag2` will set both configuration parameters
+to `true`, while `--flag1 --flag2 bar` will set `flag1` to `true`,
+and `flag2` to `bar`.  Finally, `--flag1 --flag2 -- bar` will set
+both configuration parameters to `true`, and the `bar` is taken
+as a command argument.
 
 ### Environment Variables
 
@@ -21,7 +27,7 @@ configuration parameter to `bar`.  Any environment configurations that
 are not given a value will be given the value of `true`.  Config
 values are case-insensitive, so `NPM_CONFIG_FOO=bar` will work the
 same. However, please note that inside [npm-scripts](/misc/scripts)
-npm will set it's own environment variables and Node will prefer
+npm will set its own environment variables and Node will prefer
 those lowercase versions over any uppercase ones that you might set.
 For details see [this issue](https://github.com/npm/npm/issues/14528).
 
@@ -31,9 +37,9 @@ The four relevant files are:
 
 * per-project configuration file (`/path/to/my/project/.npmrc`)
 * per-user configuration file (defaults to `$HOME/.npmrc`; configurable via CLI
-  option `--userconfig` or environment variable `$NPM_CONF_USERCONFIG`)
+  option `--userconfig` or environment variable `$NPM_CONFIG_USERCONFIG`)
 * global configuration file (defaults to `$PREFIX/etc/npmrc`; configurable via
-  CLI option `--globalconfig` or environment variable `$NPM_CONF_GLOBALCONFIG`)
+  CLI option `--globalconfig` or environment variable `$NPM_CONFIG_GLOBALCONFIG`)
 * npm's built-in configuration file (`/path/to/npm/npmrc`)
 
 See npmrc(5) for more details.
@@ -63,6 +69,7 @@ The following shorthands are parsed on the command-line:
 * `-f`: `--force`
 * `-desc`: `--description`
 * `-S`: `--save`
+* `-P`: `--save-prod`
 * `-D`: `--save-dev`
 * `-O`: `--save-optional`
 * `-B`: `--save-bundle`
@@ -682,6 +689,16 @@ Attempt to install packages in the `optionalDependencies` object.  Note
 that if these packages fail to install, the overall installation
 process is not aborted.
 
+### package-lock
+
+* Default: true
+* Type: Boolean
+
+If set to false, then ignore `package-lock.json` files when installing. This
+will also prevent _writing_ `package-lock.json` if `save` is true.
+
+This option is an alias for `--shrinkwrap`.
+
 ### parseable
 
 * Default: false
@@ -803,6 +820,17 @@ If a package would be saved at install time by the use of `--save`,
 When used with the `npm rm` command, it removes it from the
 bundledDependencies list.
 
+### save-prod
+
+* Default: false
+* Type: Boolean
+
+Makes sure that a package will be saved into `dependencies` specifically. This
+is useful if a package already exists in `devDependencies` or
+`optionalDependencies`, but you want to move it to be a production dep. This is
+also the default behavior if `--save` is true, and neither `--save-dev` or
+`--save-optional` are true.
+
 ### save-dev
 
 * Default: false
@@ -860,6 +888,13 @@ in to a private registry for the first time:
 `npm login --scope=@organization --registry=registry.organization.com`, which
 will cause `@organization` to be mapped to the registry for future installation
 of packages specified according to the pattern `@organization/package`.
+
+### script-shell
+
+* Default: `null`
+* Type: path
+
+The shell to use for scripts run with the `npm run` command.
 
 ### scripts-prepend-node-path
 
@@ -934,8 +969,10 @@ The shell to run for the `npm explore` command.
 * Default: true
 * Type: Boolean
 
-If set to false, then ignore `npm-shrinkwrap.json` files when
-installing.
+If set to false, then ignore `npm-shrinkwrap.json` files when installing. This
+will also prevent _writing_ `npm-shrinkwrap.json` if `save` is true.
+
+This option is an alias for `--package-lock`.
 
 ### sign-git-tag
 

@@ -2,61 +2,46 @@
 
 const common = require('../common');
 const assert = require('assert');
+
+// general hook test setup
 const tick = require('./tick');
 const initHooks = require('./init-hooks');
 const { checkInvocations } = require('./hook-checks');
-const tty_fd = common.getTTYfd();
-
-if (tty_fd < 0)
-  return common.skip('no valid TTY fd available');
-const ttyStream = (() => {
-  try {
-    return new (require('tty').WriteStream)(tty_fd);
-  } catch (e) {
-    return null;
-  }
-})();
-if (ttyStream === null)
-  return common.skip('no valid TTY fd available');
 
 const hooks = initHooks();
 hooks.enable();
 
-const as = hooks.activitiesOfTypes('TTYWRAP');
-assert.strictEqual(as.length, 1, 'one TTYWRAP when tty created');
-const tty = as[0];
-assert.strictEqual(tty.type, 'TTYWRAP', 'tty wrap');
-assert.strictEqual(typeof tty.uid, 'number', 'uid is a number');
-assert.strictEqual(typeof tty.triggerId, 'number', 'triggerId is a number');
-checkInvocations(tty, { init: 1 }, 'when tty created');
+if (!process.stdout.isTTY)
+  return common.skip('no valid writable TTY available');
 
-ttyStream
-  .on('finish', common.mustCall(onfinish))
-  .end(common.mustCall(onend));
+// test specific setup
+const checkInitOpts = { init: 1 };
+const checkEndedOpts = { init: 1, before: 1, after: 1, destroy: 1 };
 
-checkInvocations(tty, { init: 1}, 'when tty.end() was invoked ');
+// test code
+//
+// listen to stdin except on Windows
+const activities = hooks.activitiesOfTypes('TTYWRAP');
+assert.strictEqual(activities.length, 1);
 
-function onend() {
-  tick(2, common.mustCall(() =>
-    checkInvocations(
-      tty, { init: 1, before: 1, after: 1, destroy: 1 },
-      'when tty ended ')
-  ));
-}
+const tty = activities[0];
+assert.strictEqual(tty.type, 'TTYWRAP');
+assert.strictEqual(typeof tty.uid, 'number');
+assert.strictEqual(typeof tty.triggerAsyncId, 'number');
+checkInvocations(tty, checkInitOpts, 'when tty created');
 
-function onfinish() {
-  tick(2, common.mustCall(() =>
-    checkInvocations(
-      tty, { init: 1, before: 1, after: 1, destroy: 1 },
-      'when tty ended ')
-  ));
-}
+const delayedOnCloseHandler = common.mustCall(() => {
+  checkInvocations(tty, checkEndedOpts, 'when tty ended');
+});
+process.stdout.on('error', (err) => assert.fail(err));
+process.stdout.on('close', common.mustCall(() =>
+  tick(2, delayedOnCloseHandler)
+));
+process.stdout.destroy();
+checkInvocations(tty, checkInitOpts, 'when tty.end() was invoked');
 
-process.on('exit', onexit);
-
-function onexit() {
+process.on('exit', () => {
   hooks.disable();
   hooks.sanityCheck('TTYWRAP');
-  checkInvocations(tty, { init: 1, before: 1, after: 1, destroy: 1 },
-                   'when process exits');
-}
+  checkInvocations(tty, checkEndedOpts, 'when process exits');
+});

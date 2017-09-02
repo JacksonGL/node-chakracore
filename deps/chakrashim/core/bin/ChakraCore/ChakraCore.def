@@ -2,7 +2,6 @@ LIBRARY ChakraCore
 
 EXPORTS
 #include "JsrtCommonExports.inc"
-
 JsDiagEvaluate
 JsDiagGetBreakOnException
 JsDiagGetBreakpoints
@@ -55,3 +54,7 @@ JsModuleEvaluation
 JsSetModuleHostInfo
 JsGetModuleHostInfo
 JsInitializeJITServer
+
+JsCreateSharedArrayBufferWithSharedContent
+JsGetSharedArrayBufferContent
+JsReleaseSharedArrayBufferContentHandle

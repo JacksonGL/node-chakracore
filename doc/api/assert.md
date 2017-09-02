@@ -18,7 +18,7 @@ An alias of [`assert.ok()`][].
 <!-- YAML
 added: v0.1.21
 changes:
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12142
     description: Set and Map content is also compared
   - version: v6.4.0, v4.7.1
@@ -102,7 +102,7 @@ parameter is undefined, a default error message is assigned.
 <!-- YAML
 added: v1.2.0
 changes:
-  - version: REPLACEME
+  - version: v8.0.0
     pr-url: https://github.com/nodejs/node/pull/12142
     description: Set and Map content is also compared
   - version: v6.4.0, v4.7.1
@@ -131,10 +131,10 @@ Generally identical to `assert.deepEqual()` with three exceptions:
 ```js
 const assert = require('assert');
 
-assert.deepEqual({a: 1}, {a: '1'});
+assert.deepEqual({ a: 1 }, { a: '1' });
 // OK, because 1 == '1'
 
-assert.deepStrictEqual({a: 1}, {a: '1'});
+assert.deepStrictEqual({ a: 1 }, { a: '1' });
 // AssertionError: { a: 1 } deepStrictEqual { a: '1' }
 // because 1 !== '1' using strict equality
 
@@ -248,7 +248,7 @@ assert.equal(1, '1');
 
 assert.equal(1, 2);
 // AssertionError: 1 == 2
-assert.equal({a: {b: 1}}, {a: {b: 1}});
+assert.equal({ a: { b: 1 } }, { a: { b: 1 } });
 //AssertionError: { a: { b: 1 } } == { a: { b: 1 } }
 ```
 
@@ -256,34 +256,63 @@ If the values are not equal, an `AssertionError` is thrown with a `message`
 property set equal to the value of the `message` parameter. If the `message`
 parameter is undefined, a default error message is assigned.
 
-## assert.fail(message)
-## assert.fail(actual, expected, message, operator)
+## assert.fail([message])
+## assert.fail(actual, expected[, message[, operator[, stackStartFunction]]])
 <!-- YAML
 added: v0.1.21
 -->
 * `actual` {any}
 * `expected` {any}
-* `message` {any}
+* `message` {any} (default: 'Failed')
 * `operator` {string} (default: '!=')
+* `stackStartFunction` {function} (default: `assert.fail`)
 
 Throws an `AssertionError`. If `message` is falsy, the error message is set as
 the values of `actual` and `expected` separated by the provided `operator`.
-Otherwise, the error message is the value of `message`.
+If just the two `actual` and `expected` arguments are provided, `operator` will
+default to `'!='`. If `message` is provided only it will be used as the error
+message, the other arguments will be stored as properties on the thrown object.
+If `stackStartFunction` is provided, all stack frames above that function will
+be removed from stacktrace (see [`Error.captureStackTrace`]). If no arguments
+are given, the default message `Failed` will be used.
 
 ```js
 const assert = require('assert');
 
 assert.fail(1, 2, undefined, '>');
-// AssertionError: 1 > 2
+// AssertionError [ERR_ASSERTION]: 1 > 2
+
+assert.fail(1, 2, 'fail');
+// AssertionError [ERR_ASSERTION]: fail
 
 assert.fail(1, 2, 'whoops', '>');
-// AssertionError: whoops
+// AssertionError [ERR_ASSERTION]: whoops
+```
+
+*Note*: Is the last two cases `actual`, `expected`, and `operator` have no
+influence on the error message.
+
+```js
+assert.fail();
+// AssertionError [ERR_ASSERTION]: Failed
 
 assert.fail('boom');
-// AssertionError: boom
+// AssertionError [ERR_ASSERTION]: boom
 
 assert.fail('a', 'b');
-// AssertionError: 'a' != 'b'
+// AssertionError [ERR_ASSERTION]: 'a' != 'b'
+```
+
+Example use of `stackStartFunction` for truncating the exception's stacktrace:
+```js
+function suppressFrame() {
+  assert.fail('a', 'b', undefined, '!==', suppressFrame);
+}
+suppressFrame();
+// AssertionError [ERR_ASSERTION]: 'a' !== 'b'
+//     at repl:1:1
+//     at ContextifyScript.Script.runInThisContext (vm.js:44:33)
+//     ...
 ```
 
 ## assert.ifError(value)
@@ -368,10 +397,10 @@ Tests for deep strict inequality. Opposite of [`assert.deepStrictEqual()`][].
 ```js
 const assert = require('assert');
 
-assert.notDeepEqual({a: 1}, {a: '1'});
+assert.notDeepEqual({ a: 1 }, { a: '1' });
 // AssertionError: { a: 1 } notDeepEqual { a: '1' }
 
-assert.notDeepStrictEqual({a: 1}, {a: '1'});
+assert.notDeepStrictEqual({ a: 1 }, { a: '1' });
 // OK
 ```
 
@@ -554,7 +583,7 @@ Note that `error` can not be a string. If a string is provided as the second
 argument, then `error` is assumed to be omitted and the string will be used for
 `message` instead. This can lead to easy-to-miss mistakes:
 
-<!-- eslint-disable assert-throws-arguments -->
+<!-- eslint-disable no-restricted-syntax -->
 ```js
 // THIS IS A MISTAKE! DO NOT DO THIS!
 assert.throws(myFunction, 'missing foo', 'did not throw with expected message');
@@ -590,6 +619,7 @@ For more information, see
 [MDN's guide on equality comparisons and sameness][mdn-equality-guide].
 
 [`Error`]: errors.html#errors_class_error
+[`Error.captureStackTrace`]: errors.html#errors_error_capturestacktrace_targetobject_constructoropt
 [`Map`]: https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/Map
 [`Object.is()`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/is
 [`RegExp`]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions

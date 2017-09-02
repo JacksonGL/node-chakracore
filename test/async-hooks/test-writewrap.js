@@ -1,17 +1,15 @@
 'use strict';
 
 const common = require('../common');
+if (!common.hasCrypto)
+  common.skip('missing crypto');
+
 const assert = require('assert');
 const initHooks = require('./init-hooks');
 const fs = require('fs');
 const { checkInvocations } = require('./hook-checks');
-
-if (!common.hasCrypto) {
-  common.skip('missing crypto');
-  return;
-}
-
 const tls = require('tls');
+
 const hooks = initHooks();
 hooks.enable();
 
@@ -20,19 +18,17 @@ hooks.enable();
 //
 const server = tls
   .createServer({
-    cert: fs.readFileSync(common.fixturesDir + '/test_cert.pem'),
-    key: fs.readFileSync(common.fixturesDir + '/test_key.pem')
+    cert: fs.readFileSync(`${common.fixturesDir}/test_cert.pem`),
+    key: fs.readFileSync(`${common.fixturesDir}/test_key.pem`)
   })
   .on('listening', common.mustCall(onlistening))
   .on('secureConnection', common.mustCall(onsecureConnection))
   .listen(common.PORT);
 
-assert.strictEqual(hooks.activitiesOfTypes('WRITEWRAP').length, 0,
-                   'no WRITEWRAP when server created');
+assert.strictEqual(hooks.activitiesOfTypes('WRITEWRAP').length, 0);
 
 function onlistening() {
-  assert.strictEqual(hooks.activitiesOfTypes('WRITEWRAP').length, 0,
-                     'no WRITEWRAP when server is listening');
+  assert.strictEqual(hooks.activitiesOfTypes('WRITEWRAP').length, 0);
   //
   // Creating client and connecting it to server
   //
@@ -40,20 +36,19 @@ function onlistening() {
     .connect(common.PORT, { rejectUnauthorized: false })
     .on('secureConnect', common.mustCall(onsecureConnect));
 
-  assert.strictEqual(hooks.activitiesOfTypes('WRITEWRAP').length, 0,
-                     'no WRITEWRAP when client created');
+  assert.strictEqual(hooks.activitiesOfTypes('WRITEWRAP').length, 0);
 }
 
 function checkDestroyedWriteWraps(n, stage) {
   const as = hooks.activitiesOfTypes('WRITEWRAP');
-  assert.strictEqual(as.length, n, n + ' WRITEWRAPs when ' + stage);
+  assert.strictEqual(as.length, n, `${n} WRITEWRAPs when ${stage}`);
 
   function checkValidWriteWrap(w) {
-    assert.strictEqual(w.type, 'WRITEWRAP', 'write wrap');
-    assert.strictEqual(typeof w.uid, 'number', 'uid is a number');
-    assert.strictEqual(typeof w.triggerId, 'number', 'triggerId is a number');
+    assert.strictEqual(w.type, 'WRITEWRAP');
+    assert.strictEqual(typeof w.uid, 'number');
+    assert.strictEqual(typeof w.triggerAsyncId, 'number');
 
-    checkInvocations(w, { init: 1, destroy: 1 }, 'when ' + stage);
+    checkInvocations(w, { init: 1 }, `when ${stage}`);
   }
   as.forEach(checkValidWriteWrap);
 }

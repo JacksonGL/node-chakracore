@@ -1,10 +1,8 @@
 'use strict';
 
 const common = require('../common');
-if (!common.hasCrypto) {
+if (!common.hasCrypto)
   common.skip('missing crypto');
-  return;
-}
 
 const fs = require('fs');
 const https = require('https');
@@ -29,7 +27,7 @@ server.listen(0, common.mustCall(() => {
   https.get({
     host: server.address().host,
     port: server.address().port,
-    headers: {host: 'agent1'},
+    headers: { host: 'agent1' },
     rejectUnauthorized: true,
     ca: options.ca,
     agent: agent

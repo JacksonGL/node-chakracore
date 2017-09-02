@@ -47,10 +47,10 @@ There are four fundamental stream types within Node.js:
 ### Object Mode
 
 All streams created by Node.js APIs operate exclusively on strings and `Buffer`
-objects. It is possible, however, for stream implementations to work with other
-types of JavaScript values (with the exception of `null`, which serves a special
-purpose within streams). Such streams are considered to operate in "object
-mode".
+(or `Uint8Array`) objects. It is possible, however, for stream implementations
+to work with other types of JavaScript values (with the exception of `null`,
+which serves a special purpose within streams). Such streams are considered to
+operate in "object mode".
 
 Stream instances are switched into object mode using the `objectMode` option
 when the stream is created. Attempting to switch an existing stream into
@@ -352,12 +352,17 @@ See also: [`writable.uncork()`][].
 ##### writable.end([chunk][, encoding][, callback])
 <!-- YAML
 added: v0.9.4
+changes:
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/11608
+    description: The `chunk` argument can now be a `Uint8Array` instance.
 -->
 
-* `chunk` {string|Buffer|any} Optional data to write. For streams not operating
-  in object mode, `chunk` must be a string or a `Buffer`. For object mode
-  streams, `chunk` may be any JavaScript value other than `null`.
-* `encoding` {string} The encoding, if `chunk` is a String
+* `chunk` {string|Buffer|Uint8Array|any} Optional data to write. For streams
+  not operating in object mode, `chunk` must be a string, `Buffer` or
+  `Uint8Array`. For object mode streams, `chunk` may be any JavaScript value
+  other than `null`.
+* `encoding` {string} The encoding, if `chunk` is a string
 * `callback` {Function} Optional callback for when the stream is finished
 
 Calling the `writable.end()` method signals that no more data will be written
@@ -434,14 +439,20 @@ See also: [`writable.cork()`][].
 <!-- YAML
 added: v0.9.4
 changes:
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/11608
+    description: The `chunk` argument can now be a `Uint8Array` instance.
   - version: v6.0.0
     pr-url: https://github.com/nodejs/node/pull/6170
     description: Passing `null` as the `chunk` parameter will always be
                  considered invalid now, even in object mode.
 -->
 
-* `chunk` {string|Buffer} The data to write
-* `encoding` {string} The encoding, if `chunk` is a String
+* `chunk` {string|Buffer|Uint8Array|any} Optional data to write. For streams
+  not operating in object mode, `chunk` must be a string, `Buffer` or
+  `Uint8Array`. For object mode streams, `chunk` may be any JavaScript value
+  other than `null`.
+* `encoding` {string} The encoding, if `chunk` is a string
 * `callback` {Function} Callback for when this chunk of data is flushed
 * Returns: {boolean} `false` if the stream wishes for the calling code to
   wait for the `'drain'` event to be emitted before continuing to write
@@ -501,11 +512,13 @@ A Writable stream in object mode will always ignore the `encoding` argument.
 
 ##### writable.destroy([error])
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
+* Returns: `this`
+
 Destroy the stream, and emit the passed error. After this call, the
-writible stream has ended. Implementors should not override this method,
+writable stream has ended. Implementors should not override this method,
 but instead implement [`writable._destroy`][writable-_destroy].
 
 ### Readable Streams
@@ -584,9 +597,8 @@ possible states:
 * `readable._readableState.flowing = true`
 
 When `readable._readableState.flowing` is `null`, no mechanism for consuming the
-streams data is provided so the stream will not generate its data.
-
-Attaching a listener for the `'data'` event, calling the `readable.pipe()`
+streams data is provided so the stream will not generate its data. While in this
+state, attaching a listener for the `'data'` event, calling the `readable.pipe()`
 method, or calling the `readable.resume()` method will switch
 `readable._readableState.flowing` to `true`, causing the Readable to begin
 actively emitting events as data is generated.
@@ -594,7 +606,22 @@ actively emitting events as data is generated.
 Calling `readable.pause()`, `readable.unpipe()`, or receiving "back pressure"
 will cause the `readable._readableState.flowing` to be set as `false`,
 temporarily halting the flowing of events but *not* halting the generation of
-data.
+data. While in this state, attaching a listener for the `'data'` event
+would not cause `readable._readableState.flowing` to switch to `true`.
+
+```js
+const { PassThrough, Writable } = require('stream');
+const pass = new PassThrough();
+const writable = new Writable();
+
+pass.pipe(writable);
+pass.unpipe(writable);
+// flowing is now false
+
+pass.on('data', (chunk) => { console.log(chunk.toString()); });
+pass.write('ok'); // will not emit 'data'
+pass.resume(); // must be called to make 'data' being emitted
+```
 
 While `readable._readableState.flowing` is `false`, data may be accumulating
 within the streams internal buffer.
@@ -743,7 +770,8 @@ end
 ```
 
 *Note*: In general, the `readable.pipe()` and `'data'` event mechanisms are
-preferred over the use of the `'readable'` event.
+easier to understand than the `'readable'` event.
+However, handling `'readable'` might result in increased throughput.
 
 ##### readable.isPaused()
 <!-- YAML
@@ -985,9 +1013,16 @@ setTimeout(() => {
 ##### readable.unshift(chunk)
 <!-- YAML
 added: v0.9.11
+changes:
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/11608
+    description: The `chunk` argument can now be a `Uint8Array` instance.
 -->
 
-* `chunk` {Buffer|string|any} Chunk of data to unshift onto the read queue
+* `chunk` {Buffer|Uint8Array|string|any} Chunk of data to unshift onto the
+  read queue. For streams not operating in object mode, `chunk` must be a
+  string, `Buffer` or `Uint8Array`. For object mode streams, `chunk` may be
+  any JavaScript value other than `null`.
 
 The `readable.unshift()` method pushes a chunk of data back into the internal
 buffer. This is useful in certain situations where a stream is being consumed by
@@ -1005,7 +1040,7 @@ section for more information.
 // Pull off a header delimited by \n\n
 // use unshift() if we get too much
 // Call the callback with (error, header, stream)
-const StringDecoder = require('string_decoder').StringDecoder;
+const { StringDecoder } = require('string_decoder');
 function parseHeader(stream, callback) {
   stream.on('error', callback);
   stream.on('readable', onReadable);
@@ -1069,8 +1104,8 @@ libraries.
 For example:
 
 ```js
-const OldReader = require('./old-api-module.js').OldReader;
-const Readable = require('stream').Readable;
+const { OldReader } = require('./old-api-module.js');
+const { Readable } = require('stream');
 const oreader = new OldReader();
 const myReader = new Readable().wrap(oreader);
 
@@ -1081,7 +1116,7 @@ myReader.on('readable', () => {
 
 ##### readable.destroy([error])
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Destroy the stream, and emit `'error'`. After this call, the
@@ -1130,7 +1165,7 @@ Examples of Transform streams include:
 
 ##### transform.destroy([error])
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 Destroy the stream, and emit `'error'`. After this call, the
@@ -1152,7 +1187,7 @@ of the four basic stream classes (`stream.Writable`, `stream.Readable`,
 parent class constructor:
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 
 class MyWritable extends Writable {
   constructor(options) {
@@ -1246,7 +1281,7 @@ objects and passing appropriate methods as constructor options.
 For example:
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 
 const myWritable = new Writable({
   write(chunk, encoding, callback) {
@@ -1274,8 +1309,9 @@ constructor and implement the `writable._write()` method. The
     Defaults to `true`
   * `objectMode` {boolean} Whether or not the
     [`stream.write(anyObj)`][stream-write] is a valid operation. When set,
-    it becomes possible to write JavaScript values other than string or
-    `Buffer` if supported by the stream implementation. Defaults to `false`
+    it becomes possible to write JavaScript values other than string,
+    `Buffer` or `Uint8Array` if supported by the stream implementation.
+    Defaults to `false`
   * `write` {Function} Implementation for the
     [`stream._write()`][stream-_write] method.
   * `writev` {Function} Implementation for the
@@ -1288,7 +1324,7 @@ constructor and implement the `writable._write()` method. The
 For example:
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 
 class MyWritable extends Writable {
   constructor(options) {
@@ -1302,7 +1338,7 @@ class MyWritable extends Writable {
 Or, when using pre-ES6 style constructors:
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 const util = require('util');
 
 function MyWritable(options) {
@@ -1316,7 +1352,7 @@ util.inherits(MyWritable, Writable);
 Or, using the Simplified Constructor approach:
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 
 const myWritable = new Writable({
   write(chunk, encoding, callback) {
@@ -1347,7 +1383,7 @@ resource.
 [`writable._write()`][stream-_write].
 
 *Note*: This function MUST NOT be called by application code directly. It
-should be implemented by child classes, and called only by the internal Writable
+should be implemented by child classes, and called by the internal Writable
 class methods only.
 
 The `callback` method must be called to signal either that the write completed
@@ -1382,7 +1418,7 @@ user programs.
   argument) to be invoked when processing is complete for the supplied chunks.
 
 *Note*: This function MUST NOT be called by application code directly. It
-should be implemented by child classes, and called only by the internal Writable
+should be implemented by child classes, and called by the internal Writable
 class methods only.
 
 The `writable._writev()` method may be implemented in addition to
@@ -1396,7 +1432,7 @@ user programs.
 
 #### writable.\_destroy(err, callback)
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 * `err` {Error} An error.
@@ -1405,13 +1441,13 @@ added: REPLACEME
 
 #### writable.\_final(callback)
 <!-- YAML
-added: REPLACEME
+added: v8.0.0
 -->
 
 * `callback` {Function} Call this function (optionally with an error
-  argument) when you are done writing any remaining data.
+  argument) when finished writing any remaining data.
 
-Note: `_final()` **must not** be called directly.  It MAY be implemented
+The `_final()` method **must not** be called directly. It may be implemented
 by child classes, and if so, will be called by the internal Writable
 class methods only.
 
@@ -1430,7 +1466,7 @@ on how the stream is being used.  Using the callback ensures consistent and
 predictable handling of errors.
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 
 const myWritable = new Writable({
   write(chunk, encoding, callback) {
@@ -1451,7 +1487,7 @@ is not of any real particular usefulness, the example illustrates each of the
 required elements of a custom [Writable][] stream instance:
 
 ```js
-const Writable = require('stream').Writable;
+const { Writable } = require('stream');
 
 class MyWritable extends Writable {
   constructor(options) {
@@ -1495,7 +1531,7 @@ constructor and implement the `readable._read()` method.
 For example:
 
 ```js
-const Readable = require('stream').Readable;
+const { Readable } = require('stream');
 
 class MyReadable extends Readable {
   constructor(options) {
@@ -1509,7 +1545,7 @@ class MyReadable extends Readable {
 Or, when using pre-ES6 style constructors:
 
 ```js
-const Readable = require('stream').Readable;
+const { Readable } = require('stream');
 const util = require('util');
 
 function MyReadable(options) {
@@ -1523,7 +1559,7 @@ util.inherits(MyReadable, Readable);
 Or, using the Simplified Constructor approach:
 
 ```js
-const Readable = require('stream').Readable;
+const { Readable } = require('stream');
 
 const myReadable = new Readable({
   read(size) {
@@ -1537,7 +1573,7 @@ const myReadable = new Readable({
 * `size` {number} Number of bytes to read asynchronously
 
 *Note*: This function MUST NOT be called by application code directly. It
-should be implemented by child classes, and called only by the internal Readable
+should be implemented by child classes, and called by the internal Readable
 class methods only.
 
 All Readable stream implementations must provide an implementation of the
@@ -1564,16 +1600,26 @@ internal to the class that defines it, and should never be called directly by
 user programs.
 
 #### readable.push(chunk[, encoding])
+<!-- YAML
+changes:
+  - version: v8.0.0
+    pr-url: https://github.com/nodejs/node/pull/11608
+    description: The `chunk` argument can now be a `Uint8Array` instance.
+-->
 
-* `chunk` {Buffer|null|string|any} Chunk of data to push into the read queue
-* `encoding` {string} Encoding of String chunks.  Must be a valid
+* `chunk` {Buffer|Uint8Array|string|null|any} Chunk of data to push into the
+  read queue. For streams not operating in object mode, `chunk` must be a
+  string, `Buffer` or `Uint8Array`. For object mode streams, `chunk` may be
+  any JavaScript value.
+* `encoding` {string} Encoding of string chunks.  Must be a valid
   Buffer encoding, such as `'utf8'` or `'ascii'`
 * Returns {boolean} `true` if additional chunks of data may continued to be
   pushed; `false` otherwise.
 
-When `chunk` is not `null`, the `chunk` of data will be added to the
-internal queue for users of the stream to consume. Passing `chunk` as `null`
-signals the end of the stream (EOF), after which no more data can be written.
+When `chunk` is a `Buffer`, `Uint8Array` or `string`, the `chunk` of data will
+be added to the internal queue for users of the stream to consume.
+Passing `chunk` as `null` signals the end of the stream (EOF), after which no
+more data can be written.
 
 When the Readable is operating in paused mode, the data added with
 `readable.push()` can be read out by calling the
@@ -1632,7 +1678,7 @@ consistent and predictable handling of errors.
 
 <!-- eslint-disable no-useless-return -->
 ```js
-const Readable = require('stream').Readable;
+const { Readable } = require('stream');
 
 const myReadable = new Readable({
   read(size) {
@@ -1653,7 +1699,7 @@ The following is a basic example of a Readable stream that emits the numerals
 from 1 to 1,000,000 in ascending order, and then ends.
 
 ```js
-const Readable = require('stream').Readable;
+const { Readable } = require('stream');
 
 class Counter extends Readable {
   constructor(opt) {
@@ -1694,23 +1740,34 @@ constructor and implement *both* the `readable._read()` and
 `writable._write()` methods.
 
 #### new stream.Duplex(options)
+<!-- YAML
+changes:
+  - version: v8.4.0
+    pr-url: https://github.com/nodejs/node/pull/14636
+    description: The `readableHighWaterMark` and `writableHighWaterMark` options
+                 are supported now.
+-->
 
 * `options` {Object} Passed to both Writable and Readable
   constructors. Also has the following fields:
   * `allowHalfOpen` {boolean} Defaults to `true`. If set to `false`, then
-    the stream will automatically end the readable side when the
-    writable side ends and vice versa.
+    the stream will automatically end the writable side when the
+    readable side ends.
   * `readableObjectMode` {boolean} Defaults to `false`. Sets `objectMode`
     for readable side of the stream. Has no effect if `objectMode`
     is `true`.
   * `writableObjectMode` {boolean} Defaults to `false`. Sets `objectMode`
     for writable side of the stream. Has no effect if `objectMode`
     is `true`.
+  * `readableHighWaterMark` {number} Sets `highWaterMark` for the readable side
+    of the stream. Has no effect if `highWaterMark` is provided.
+  * `writableHighWaterMark` {number} Sets `highWaterMark` for the writable side
+    of the stream. Has no effect if `highWaterMark` is provided.
 
 For example:
 
 ```js
-const Duplex = require('stream').Duplex;
+const { Duplex } = require('stream');
 
 class MyDuplex extends Duplex {
   constructor(options) {
@@ -1723,7 +1780,7 @@ class MyDuplex extends Duplex {
 Or, when using pre-ES6 style constructors:
 
 ```js
-const Duplex = require('stream').Duplex;
+const { Duplex } = require('stream');
 const util = require('util');
 
 function MyDuplex(options) {
@@ -1737,7 +1794,7 @@ util.inherits(MyDuplex, Duplex);
 Or, using the Simplified Constructor approach:
 
 ```js
-const Duplex = require('stream').Duplex;
+const { Duplex } = require('stream');
 
 const myDuplex = new Duplex({
   read(size) {
@@ -1760,7 +1817,7 @@ incoming written data via the [Writable][] interface that is read back out
 via the [Readable][] interface.
 
 ```js
-const Duplex = require('stream').Duplex;
+const { Duplex } = require('stream');
 const kSource = Symbol('source');
 
 class MyDuplex extends Duplex {
@@ -1801,7 +1858,7 @@ that accepts JavaScript numbers that are converted to hexadecimal strings on
 the Readable side.
 
 ```js
-const Transform = require('stream').Transform;
+const { Transform } = require('stream');
 
 // All Transform streams are also Duplex Streams
 const myTransform = new Transform({
@@ -1866,7 +1923,7 @@ the output on the Readable side is not consumed.
 For example:
 
 ```js
-const Transform = require('stream').Transform;
+const { Transform } = require('stream');
 
 class MyTransform extends Transform {
   constructor(options) {
@@ -1879,7 +1936,7 @@ class MyTransform extends Transform {
 Or, when using pre-ES6 style constructors:
 
 ```js
-const Transform = require('stream').Transform;
+const { Transform } = require('stream');
 const util = require('util');
 
 function MyTransform(options) {
@@ -1893,7 +1950,7 @@ util.inherits(MyTransform, Transform);
 Or, using the Simplified Constructor approach:
 
 ```js
-const Transform = require('stream').Transform;
+const { Transform } = require('stream');
 
 const myTransform = new Transform({
   transform(chunk, encoding, callback) {
@@ -1917,7 +1974,7 @@ after all data has been output, which occurs after the callback in
   argument and data) to be called when remaining data has been flushed.
 
 *Note*: This function MUST NOT be called by application code directly. It
-should be implemented by child classes, and called only by the internal Readable
+should be implemented by child classes, and called by the internal Readable
 class methods only.
 
 In some cases, a transform operation may need to emit an additional bit of
@@ -1952,7 +2009,7 @@ user programs.
   processed.
 
 *Note*: This function MUST NOT be called by application code directly. It
-should be implemented by child classes, and called only by the internal Readable
+should be implemented by child classes, and called by the internal Readable
 class methods only.
 
 All Transform stream implementations must provide a `_transform()`
@@ -1986,6 +2043,10 @@ transform.prototype._transform = function(data, encoding, callback) {
 The `transform._transform()` method is prefixed with an underscore because it
 is internal to the class that defines it, and should never be called directly by
 user programs.
+
+`transform._transform()` is never called in  parallel; streams implement a
+queue mechanism, and to receive the next chunk, `callback` must be
+called, either synchronously or asynchronously.
 
 #### Class: stream.PassThrough
 
@@ -2088,8 +2149,8 @@ Readable stream class internals.
 
 Use of `readable.push('')` is not recommended.
 
-Pushing a zero-byte string or `Buffer` to a stream that is not in object mode
-has an interesting side effect. Because it *is* a call to
+Pushing a zero-byte string, `Buffer` or `Uint8Array` to a stream that is not in
+object mode has an interesting side effect. Because it *is* a call to
 [`readable.push()`][stream-push], the call will end the reading process.
 However, because the argument is an empty string, no data is added to the
 readable buffer so there is nothing for a user to consume.
@@ -2131,6 +2192,7 @@ readable buffer so there is nothing for a user to consume.
 [fs read streams]: fs.html#fs_class_fs_readstream
 [fs write streams]: fs.html#fs_class_fs_writestream
 [http-incoming-message]: http.html#http_class_http_incomingmessage
+[zlib]: zlib.html
 [stream-_flush]: #stream_transform_flush_callback
 [stream-_read]: #stream_readable_read_size_1
 [stream-_transform]: #stream_transform_transform_chunk_encoding_callback
@@ -2145,6 +2207,3 @@ readable buffer so there is nothing for a user to consume.
 [stream-write]: #stream_writable_write_chunk_encoding_callback
 [readable-_destroy]: #stream_readable_destroy_err_callback
 [writable-_destroy]: #stream_writable_destroy_err_callback
-[TCP sockets]: net.html#net_class_net_socket
-[Transform]: #stream_class_stream_transform
-[Writable]: #stream_class_stream_writable

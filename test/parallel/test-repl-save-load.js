@@ -63,7 +63,7 @@ assert.strictEqual(fs.readFileSync(saveFileName, 'utf8'),
 
   putIn.run(['.editor']);
   putIn.run(cmds);
-  replServer.write('', {ctrl: true, name: 'd'});
+  replServer.write('', { ctrl: true, name: 'd' });
 
   putIn.run([`.save ${saveFileName}`]);
   replServer.close();
@@ -98,7 +98,7 @@ putIn.write = function(data) {
   // make sure I get a failed to load message and not some crazy error
   assert.strictEqual(data, `Failed to load:${loadFile}\n`);
   // eat me to avoid work
-  putIn.write = common.noop;
+  putIn.write = () => {};
 };
 putIn.run([`.load ${loadFile}`]);
 
@@ -106,7 +106,7 @@ putIn.run([`.load ${loadFile}`]);
 loadFile = common.tmpDir;
 putIn.write = function(data) {
   assert.strictEqual(data, `Failed to load:${loadFile} is not a valid file\n`);
-  putIn.write = common.noop;
+  putIn.write = () => {};
 };
 putIn.run([`.load ${loadFile}`]);
 
@@ -122,7 +122,7 @@ putIn.write = function(data) {
   // make sure I get a failed to save message and not some other error
   assert.strictEqual(data, `Failed to save:${invalidFileName}\n`);
   // reset to no-op
-  putIn.write = common.noop;
+  putIn.write = () => {};
 };
 
 // save it to a file

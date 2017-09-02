@@ -11,8 +11,9 @@
 
 #include "ByteCode/ByteCodeApi.h"
 #include "Library/ProfileString.h"
+#ifdef ENABLE_SCRIPT_DEBUGGING
 #include "Debug/DiagHelperMethodWrapper.h"
-#include "BackendApi.h"
+#endif
 #if PROFILE_DICTIONARY
 #include "DictionaryStats.h"
 #endif
@@ -44,7 +45,9 @@ namespace Js
         return scriptContext.Detach();
     }
 
+#if ENABLE_NATIVE_CODEGEN
     CriticalSection JITPageAddrToFuncRangeCache::cs;
+#endif
 
     ScriptContext::ScriptContext(ThreadContext* threadContext) :
         ScriptContextBase(),
@@ -59,7 +62,6 @@ namespace Js
 #endif
         trigramAlphabet(nullptr),
         regexStacks(nullptr),
-        arrayMatchInit(false),
         config(threadContext->GetConfig(), threadContext->IsOptimizedForManyInstances()),
 #if ENABLE_BACKGROUND_PARSING
         backgroundParser(nullptr),
@@ -67,6 +69,8 @@ namespace Js
 #if ENABLE_NATIVE_CODEGEN
         nativeCodeGen(nullptr),
         m_domFastPathHelperMap(nullptr),
+        m_remoteScriptContextAddr(nullptr),
+        jitFuncRangeCache(nullptr),
 #endif
         threadContext(threadContext),
         scriptStartEventHandler(nullptr),
@@ -76,8 +80,14 @@ namespace Js
 #endif
         integerStringMap(this->GeneralAllocator()),
         guestArena(nullptr),
+#ifdef ENABLE_SCRIPT_DEBUGGING
+        diagnosticArena(nullptr),
         raiseMessageToDebuggerFunctionType(nullptr),
         transitionToDebugModeIfFirstSourceFn(nullptr),
+        debugContext(nullptr),
+        isDebugContextInitialized(false),
+        isEnumeratingRecyclerObjects(false),
+#endif
         sourceSize(0),
         deferredBody(false),
         isScriptContextActuallyClosed(false),
@@ -97,7 +107,6 @@ namespace Js
         DispatchDefaultInvoke(nullptr),
         DispatchProfileInvoke(nullptr),
         m_pBuiltinFunctionIdMap(nullptr),
-        diagnosticArena(nullptr),
         hostScriptContext(nullptr),
         scriptEngineHaltCallback(nullptr),
 #if DYNAMIC_INTERPRETER_THUNK
@@ -128,9 +137,7 @@ namespace Js
         registeredPrototypeChainEnsuredToHaveOnlyWritableDataPropertiesScriptContext(nullptr),
         firstInterpreterFrameReturnAddress(nullptr),
         builtInLibraryFunctions(nullptr),
-        m_remoteScriptContextAddr(nullptr),
-        isWeakReferenceDictionaryListCleared(false),
-        isDebugContextInitialized(false)
+        isWeakReferenceDictionaryListCleared(false)
 #if ENABLE_PROFILE_INFO
         , referencesSharedDynamicSourceContextInfo(false)
 #endif
@@ -156,6 +163,10 @@ namespace Js
 #endif
 #ifdef REJIT_STATS
         , rejitStatsMap(nullptr)
+        , bailoutReasonCounts(nullptr)
+        , bailoutReasonCountsCap(nullptr)
+        , rejitReasonCounts(nullptr)
+        , rejitReasonCountsCap(nullptr)
 #endif
 #ifdef ENABLE_BASIC_TELEMETRY
         , telemetry(nullptr)
@@ -169,18 +180,15 @@ namespace Js
         , webWorkerId(Js::Constants::NonWebWorkerContextId)
         , url(_u(""))
         , startupComplete(false)
-        , isEnumeratingRecyclerObjects(false)
 #ifdef EDIT_AND_CONTINUE
         , activeScriptEditQuery(nullptr)
-#endif
-#ifdef ENABLE_SCRIPT_PROFILING
-        , heapEnum(nullptr)
 #endif
 #ifdef RECYCLER_PERF_COUNTERS
         , bindReferenceCount(0)
 #endif
         , nextPendingClose(nullptr)
 #ifdef ENABLE_SCRIPT_PROFILING
+        , heapEnum(nullptr)
         , m_fTraceDomCall(FALSE)
 #endif
         , intConstPropsOnGlobalObject(nullptr)
@@ -193,13 +201,13 @@ namespace Js
         , bailOutRecordBytes(0)
         , bailOutOffsetBytes(0)
 #endif
-        , debugContext(nullptr)
-        , jitFuncRangeCache(nullptr)
+        , emptyStringPropertyId(Js::PropertyIds::_none)
     {
+#ifdef ENABLE_SCRIPT_DEBUGGING
        // This may allocate memory and cause exception, but it is ok, as we all we have done so far
        // are field init and those dtor will be called if exception occurs
        threadContext->EnsureDebugManager();
-
+#endif
        // Don't use throwing memory allocation in ctor, as exception in ctor doesn't cause the dtor to be called
        // potentially causing memory leaks
        BEGIN_NO_EXCEPTION;
@@ -314,11 +322,10 @@ namespace Js
         this->toStringInlineCache = AllocatorNewZ(InlineCacheAllocator, GetInlineCacheAllocator(), InlineCache);
 
 #ifdef REJIT_STATS
-        if (PHASE_STATS1(Js::ReJITPhase))
-        {
-            rejitReasonCounts = AnewArrayZ(GeneralAllocator(), uint, NumRejitReasons);
-            bailoutReasonCounts = Anew(GeneralAllocator(), BailoutStatsMap, GeneralAllocator());
-        }
+        rejitReasonCounts = AnewArrayZ(GeneralAllocator(), uint, NumRejitReasons);
+        rejitReasonCountsCap = AnewArrayZ(GeneralAllocator(), uint, NumRejitReasons);
+        bailoutReasonCounts = Anew(GeneralAllocator(), BailoutStatsMap, GeneralAllocator());
+        bailoutReasonCountsCap = Anew(GeneralAllocator(), BailoutStatsMap, GeneralAllocator());
 #endif
 
 #ifdef ENABLE_BASIC_TELEMETRY
@@ -337,10 +344,12 @@ namespace Js
 #if ENABLE_NATIVE_CODEGEN
         m_domFastPathHelperMap = HeapNew(JITDOMFastPathHelperMap, &HeapAllocator::Instance, 17);
 #endif
-
+#ifdef ENABLE_SCRIPT_DEBUGGING
         this->debugContext = HeapNew(DebugContext, this);
+#endif
     }
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
     void ScriptContext::EnsureClearDebugDocument()
     {
         if (this->sourceList)
@@ -354,6 +363,7 @@ namespace Js
             });
         }
     }
+#endif
 
     void ScriptContext::ShutdownClearSourceLists()
     {
@@ -371,7 +381,9 @@ namespace Js
                 });
             }
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
             EnsureClearDebugDocument();
+#endif
 
             // Don't need the source list any more so ok to release
             this->sourceList.Unroot(this->GetRecycler());
@@ -475,6 +487,15 @@ namespace Js
         {
             BackgroundParser::Delete(this->backgroundParser);
             this->backgroundParser = nullptr;
+        }
+#endif
+
+#ifdef ENABLE_SCRIPT_DEBUGGING
+        if (this->debugContext != nullptr)
+        {
+            Assert(this->debugContext->IsClosed());
+            HeapDelete(this->debugContext);
+            this->debugContext = nullptr;
         }
 #endif
 
@@ -660,22 +681,22 @@ namespace Js
         DeRegisterProfileProbe(S_OK, nullptr);
 #endif
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
         this->EnsureClearDebugDocument();
+
         if (this->debugContext != nullptr)
         {
-            if(this->debugContext->GetProbeContainer())
+            if (this->debugContext->GetProbeContainer() != nullptr)
             {
-                this->debugContext->GetProbeContainer()->UninstallInlineBreakpointProbe(NULL);
+                this->debugContext->GetProbeContainer()->UninstallInlineBreakpointProbe(nullptr);
                 this->debugContext->GetProbeContainer()->UninstallDebuggerScriptOptionCallback();
             }
 
-            // Guard the closing and deleting of DebugContext as in meantime PDM might
-            // call OnBreakFlagChange
+            // Guard the closing DebugContext as in meantime PDM might call OnBreakFlagChange
             AutoCriticalSection autoDebugContextCloseCS(&debugContextCloseCS);
-            DebugContext* tempDebugContext = this->debugContext;
-            this->debugContext = nullptr;
-            tempDebugContext->Close();
-            HeapDelete(tempDebugContext);
+            this->debugContext->Close();
+            // Not deleting debugContext here as Close above will clear all memory debugContext allocated.
+            // Actual deletion of debugContext will happen in ScriptContext destructor
         }
 
         if (this->diagnosticArena != nullptr)
@@ -683,6 +704,7 @@ namespace Js
             HeapDelete(this->diagnosticArena);
             this->diagnosticArena = nullptr;
         }
+#endif
 
         // Need to print this out before the native code gen is deleted
         // which will delete the codegenProfiler
@@ -747,7 +769,9 @@ namespace Js
             threadContext->UnregisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertiesScriptContext(registeredScriptContext);
         }
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
         threadContext->ReleaseDebugManager();
+#endif
 
         // This can be null if the script context initialization threw
         // and InternalClose gets called in the destructor code path
@@ -820,7 +844,7 @@ namespace Js
 
     PropertyId ScriptContext::GetOrAddPropertyIdTracked(JsUtil::CharacterBuffer<WCHAR> const& propName)
     {
-        Js::PropertyRecord const * propertyRecord;
+        Js::PropertyRecord const * propertyRecord = nullptr;
         threadContext->GetOrAddPropertyId(propName, &propertyRecord);
 
         this->TrackPid(propertyRecord);
@@ -835,7 +859,7 @@ namespace Js
 
     PropertyId ScriptContext::GetOrAddPropertyIdTracked(__in_ecount(propertyNameLength) LPCWSTR propertyName, __in int propertyNameLength)
     {
-        Js::PropertyRecord const * propertyRecord;
+        Js::PropertyRecord const * propertyRecord = nullptr;
         threadContext->GetOrAddPropertyId(propertyName, propertyNameLength, &propertyRecord);
         if (propertyNameLength == 2)
         {
@@ -1260,11 +1284,13 @@ namespace Js
 
     void ScriptContext::InitializePostGlobal()
     {
+#ifdef ENABLE_SCRIPT_DEBUGGING
         this->GetDebugContext()->Initialize();
 
         this->GetDebugContext()->GetProbeContainer()->Initialize(this);
 
         isDebugContextInitialized = true;
+#endif
 
 #if defined(_M_ARM32_OR_ARM64)
         // We need to ensure that the above write to the isDebugContextInitialized is visible to the debugger thread.
@@ -1418,6 +1444,7 @@ namespace Js
         this->GetThreadContext()->RegisterScriptContext(this);
     }
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
     ArenaAllocator* ScriptContext::AllocatorForDiagnostics()
     {
         if (this->diagnosticArena == nullptr)
@@ -1427,6 +1454,7 @@ namespace Js
         Assert(this->diagnosticArena != nullptr);
         return this->diagnosticArena;
     }
+#endif
 
     void ScriptContext::PushObject(Var object)
     {
@@ -1620,7 +1648,7 @@ namespace Js
     {
         PropertyStringCacheMap* propertyStringMap = this->GetLibrary()->EnsurePropertyStringMap();
 
-        RecyclerWeakReference<PropertyString>* stringReference;
+        RecyclerWeakReference<PropertyString>* stringReference = nullptr;
         if (propertyStringMap->TryGetValue(propertyId, &stringReference))
         {
             PropertyString *string = stringReference->Get();
@@ -1657,7 +1685,7 @@ namespace Js
         if (propertyStringMap != nullptr)
         {
             PropertyString *string = nullptr;
-            RecyclerWeakReference<PropertyString>* stringReference;
+            RecyclerWeakReference<PropertyString>* stringReference = nullptr;
             if (propertyStringMap->TryGetValue(propertyId, &stringReference))
             {
                 string = stringReference->Get();
@@ -1674,7 +1702,7 @@ namespace Js
                         Output::Print(_u("PropertyString '%s' : Invalidating LdElem cache for type %p\n"), string->GetString(), type);
                     }
 #endif
-                    cache->GetInlineCaches()[cache->GetInlineCacheIndexForType(type)].Clear();
+                    cache->GetInlineCaches()[cache->GetInlineCacheIndexForType(type)].RemoveFromInvalidationListAndClear(this->GetThreadContext());
                 }
                 cache = string->GetStElemInlineCache();
                 if (cache->PretendTrySetProperty(type, type, &info))
@@ -1685,7 +1713,7 @@ namespace Js
                         Output::Print(_u("PropertyString '%s' : Invalidating StElem cache for type %p\n"), string->GetString(), type);
                     }
 #endif
-                    cache->GetInlineCaches()[cache->GetInlineCacheIndexForType(type)].Clear();
+                    cache->GetInlineCaches()[cache->GetInlineCacheIndexForType(type)].RemoveFromInvalidationListAndClear(this->GetThreadContext());
                 }
             }
         }
@@ -1730,25 +1758,37 @@ namespace Js
 
         JavascriptString *string;
 
+// TODO: (obastemur) Could this be dynamic instead of compile time?
+#ifndef CC_LOW_MEMORY_TARGET // we don't need this on a target with low memory
         if (!this->integerStringMap.TryGetValue(value, &string))
         {
             // Add the string to hash table cache
             // Don't add if table is getting too full.  We'll be holding on to
             // too many strings, and table lookup will become too slow.
-            if (this->integerStringMap.Count() > 1024)
+            // TODO: Long term running app, this cache doesn't provide much value?
+            //       i.e. what is the importance of first 512 number to string calls?
+            //       a solution; count the number of times we couldn't use cache
+            //       after cache is full. If it's bigger than X ?? the discard the
+            //       previous cache?
+            if (this->integerStringMap.Count() > 512)
             {
+#endif
                 // Use recycler memory
                 string = TaggedInt::ToString(value, this);
+
+#ifndef CC_LOW_MEMORY_TARGET
             }
             else
             {
-                char16 stringBuffer[20];
+                char16 stringBuffer[22];
 
-                TaggedInt::ToBuffer(value, stringBuffer, _countof(stringBuffer));
-                string = JavascriptString::NewCopySzFromArena(stringBuffer, this, this->GeneralAllocator());
+                int pos = TaggedInt::ToBuffer(value, stringBuffer, _countof(stringBuffer));
+                string = JavascriptString::NewCopySzFromArena(stringBuffer + pos,
+                    this, this->GeneralAllocator(), (_countof(stringBuffer) - 1) - pos);
                 this->integerStringMap.AddNew(value, string);
             }
         }
+#endif
 
         return string;
     }
@@ -2041,14 +2081,19 @@ namespace Js
 
     void ScriptContext::OnScriptStart(bool isRoot, bool isScript)
     {
-        const bool isForcedEnter = this->GetDebugContext() != nullptr ? this->GetDebugContext()->GetProbeContainer()->isForcedToEnterScriptStart : false;
+        const bool isForcedEnter = 
+#ifdef ENABLE_SCRIPT_DEBUGGING
+            this->GetDebugContext() != nullptr ? this->GetDebugContext()->GetProbeContainer()->isForcedToEnterScriptStart : 
+#endif
+            false;
         if (this->scriptStartEventHandler != nullptr && ((isRoot && threadContext->GetCallRootLevel() == 1) || isForcedEnter))
         {
+#ifdef ENABLE_SCRIPT_DEBUGGING
             if (this->GetDebugContext() != nullptr)
             {
                 this->GetDebugContext()->GetProbeContainer()->isForcedToEnterScriptStart = false;
             }
-
+#endif
             this->scriptStartEventHandler(this);
         }
 
@@ -2194,10 +2239,12 @@ namespace Js
     {
         Assert(sourceInfo->GetScriptContext() == this);
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
         if (this->IsScriptContextInDebugMode() && !sourceInfo->GetIsLibraryCode() && !sourceInfo->IsInDebugMode())
         {
             sourceInfo->SetInDebugMode(true);
         }
+#endif
 
         RecyclerWeakReference<Utf8SourceInfo>* sourceWeakRef = this->GetRecycler()->CreateWeakReferenceHandle<Utf8SourceInfo>(sourceInfo);
         sourceInfo->SetIsCesu8(isCesu8);
@@ -2403,7 +2450,7 @@ namespace Js
 
     SourceContextInfo* ScriptContext::GetSourceContextInfo(uint hash)
     {
-        SourceContextInfo * sourceContextInfo;
+        SourceContextInfo * sourceContextInfo = nullptr;
         if (this->Cache()->dynamicSourceContextInfoMap && this->Cache()->dynamicSourceContextInfoMap->TryGetValue(hash, &sourceContextInfo))
         {
             return sourceContextInfo;
@@ -2503,7 +2550,7 @@ namespace Js
 
         // We only init sourceContextInfoMap, don't need to lock.
         EnsureSourceContextInfoMap();
-        SourceContextInfo * sourceContextInfo;
+        SourceContextInfo * sourceContextInfo = nullptr;
         if (this->Cache()->sourceContextInfoMap->TryGetValue(sourceContext, &sourceContextInfo))
         {
 #if ENABLE_PROFILE_INFO
@@ -2965,6 +3012,7 @@ namespace Js
     }
 #endif
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
     HRESULT ScriptContext::OnDebuggerAttached()
     {
         OUTPUT_TRACE(Js::DebuggerPhase, _u("ScriptContext::OnDebuggerAttached: start 0x%p\n"), this);
@@ -2996,7 +3044,7 @@ namespace Js
         DEBUGGER_ATTACHDETACH_FATAL_ERROR_IF_FAILED(hr);
 
         // Disable QC while functions are re-parsed as this can be time consuming
-        AutoDisableInterrupt autoDisableInterrupt(this->threadContext->GetInterruptPoller(), true);
+        AutoDisableInterrupt autoDisableInterrupt(this->threadContext, false /* explicitCompletion */);
 
         hr = this->GetDebugContext()->RundownSourcesAndReparse(shouldPerformSourceRundown, /*shouldReparseFunctions*/ true);
 
@@ -3092,7 +3140,7 @@ namespace Js
         this->GetDebugContext()->SetDebuggerMode(Js::DebuggerMode::SourceRundown);
 
         // Disable QC while functions are re-parsed as this can be time consuming
-        AutoDisableInterrupt autoDisableInterrupt(this->threadContext->GetInterruptPoller(), true);
+        AutoDisableInterrupt autoDisableInterrupt(this->threadContext, false /* explicitCompletion */);
 
         // Force a reparse so that indirect function caches are updated.
         hr = this->GetDebugContext()->RundownSourcesAndReparse(/*shouldPerformSourceRundown*/ false, /*shouldReparseFunctions*/ true);
@@ -3134,7 +3182,13 @@ namespace Js
 
         } autoRestore(this->GetThreadContext());
 
+        // xplat-todo: (obastemur) Enable JIT on Debug mode
+        // CodeGen entrypoint can be deleted before we are able to unregister
+        // due to how we handle xdata on xplat, resetting the entrypoints below might affect CodeGen process.
+        // it is safer (on xplat) to turn JIT off during Debug for now.
+#ifdef _WIN32
         if (!Js::Configuration::Global.EnableJitInDebugMode())
+#endif
         {
             if (attach)
             {
@@ -3267,6 +3321,7 @@ namespace Js
 #endif
         return hr;
     }
+#endif
 
 #if defined(ENABLE_SCRIPT_DEBUGGING) || defined(ENABLE_SCRIPT_PROFILING)
     // We use ProfileThunk under debugger.
@@ -3285,14 +3340,14 @@ namespace Js
             this->javascriptLibrary->SetProfileMode(true);
             this->javascriptLibrary->SetDispatchProfile(true, DispatchProfileInvoke);
 
-#ifdef ENABLE_SCRIPT_PROFILING
             if (!calledDuringAttach)
             {
+#ifdef ENABLE_SCRIPT_PROFILING
                 m_fTraceDomCall = TRUE; // This flag is always needed in DebugMode to wrap external functions with DebugProfileThunk
+#endif
                 // Update the function objects currently present in there.
                 this->SetFunctionInRecyclerToProfileMode(true/*enumerateNonUserFunctionsOnly*/);
             }
-#endif
         }
     }
 
@@ -3351,10 +3406,12 @@ namespace Js
 
         return hr;
     }
+#endif // ENABLE_SCRIPT_PROFILING
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
     void ScriptContext::SetFunctionInRecyclerToProfileMode(bool enumerateNonUserFunctionsOnly/* = false*/)
     {
-        OUTPUT_TRACE(Js::ScriptProfilerPhase, _u("ScriptContext::SetFunctionInRecyclerToProfileMode started (m_fTraceDomCall : %s)\n"), IsTrueOrFalse(m_fTraceDomCall));
+        OUTPUT_TRACE(Js::ScriptProfilerPhase, _u("ScriptContext::SetFunctionInRecyclerToProfileMode started (m_fTraceDomCall : %s)\n"), IsTrueOrFalse(IsTraceDomCall()));
 
         // Mark this script context isEnumeratingRecyclerObjects
         AutoEnumeratingRecyclerObjects enumeratingRecyclerObjects(this);
@@ -3365,7 +3422,6 @@ namespace Js
 
         OUTPUT_TRACE(Js::ScriptProfilerPhase, _u("ScriptContext::SetFunctionInRecyclerToProfileMode ended\n"));
     }
-#endif // ENABLE_SCRIPT_PROFILING
 
     void ScriptContext::UpdateRecyclerFunctionEntryPointsForDebugger()
     {
@@ -3534,6 +3590,7 @@ namespace Js
 
         scriptFunction->ChangeEntryPoint(pBody->GetDefaultFunctionEntryPointInfo(), newEntryPoint);
     }
+#endif
 
 #if defined(ENABLE_SCRIPT_PROFILING) || defined(ENABLE_SCRIPT_DEBUGGING)
     void ScriptContext::RecyclerEnumClassEnumeratorCallback(void *address, size_t size)
@@ -3572,11 +3629,10 @@ namespace Js
 
         if (proxy != NULL)
         {
+#if defined(ENABLE_SCRIPT_PROFILING)
 #if ENABLE_DEBUG_CONFIG_OPTIONS
             char16 debugStringBuffer[MAX_FUNCTION_BODY_DEBUG_STRING_SIZE];
 #endif
-
-#if defined(ENABLE_SCRIPT_PROFILING)
             OUTPUT_TRACE(Js::ScriptProfilerPhase, _u("ScriptContext::RecyclerEnumClassEnumeratorCallback\n"));
             OUTPUT_TRACE(Js::ScriptProfilerPhase, _u("\tFunctionProxy : 0x%08X, FunctionNumber : %s, DeferredParseAttributes : %d, EntryPoint : 0x%08X"),
                 (DWORD_PTR)proxy, proxy->GetDebugNumberSet(debugStringBuffer), proxy->GetAttributes(), (DWORD_PTR)entryPoint);
@@ -3834,6 +3890,7 @@ namespace Js
         return forceNoNative;
     }
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
     void ScriptContext::InitializeDebugging()
     {
         if (!this->IsScriptContextInDebugMode()) // If we already in debug mode, we would have done below changes already.
@@ -3852,6 +3909,7 @@ namespace Js
             }
         }
     }
+#endif
 
     // Combined profile/debug wrapper thunk.
     // - used when we profile to send profile events
@@ -3865,16 +3923,17 @@ namespace Js
         Assert(!AsmJsScriptFunction::IsWasmScriptFunction(callable));
         JavascriptFunction* function = JavascriptFunction::FromVar(callable);
         ScriptContext* scriptContext = function->GetScriptContext();
+
+        // We can come here when profiling is not on
+        // e.g. User starts profiling, we update all thinks and then stop profiling - we don't update thunk
+        // So we still get this call
+#if defined(ENABLE_SCRIPT_PROFILING)
         bool functionEnterEventSent = false;
         char16 *pwszExtractedFunctionName = NULL;
         size_t functionNameLen = 0;
         const char16 *pwszFunctionName = NULL;
         HRESULT hrOfEnterEvent = S_OK;
 
-        // We can come here when profiling is not on
-        // e.g. User starts profiling, we update all thinks and then stop profiling - we don't update thunk
-        // So we still get this call
-#if defined(ENABLE_SCRIPT_PROFILING)
         PROFILER_TOKEN scriptId = -1;
         PROFILER_TOKEN functionId = -1;
         const bool isProfilingUserCode = scriptContext->GetThreadContext()->IsProfilingUserCode();
@@ -3978,7 +4037,6 @@ namespace Js
             }
         }
 
-
         __TRY_FINALLY_BEGIN // SEH is not guaranteed, see the implementation
         {
             Assert(!function->IsScriptFunction() || function->GetFunctionProxy());
@@ -3995,7 +4053,7 @@ namespace Js
             OUTPUT_VERBOSE_TRACE(Js::DebuggerPhase, _u("DebugProfileProbeThunk: calling function: %s isWrapperRegistered=%d useDebugWrapper=%d\n"),
                 function->GetFunctionInfo()->HasBody() ? function->GetFunctionBody()->GetDisplayName() : _u("built-in/library"), AutoRegisterIgnoreExceptionWrapper::IsRegistered(scriptContext->GetThreadContext()), useDebugWrapper);
 
-            if (scriptContext->IsScriptContextInDebugMode())
+            if (scriptContext->IsDebuggerRecording())
             {
                 scriptContext->GetDebugContext()->GetProbeContainer()->StartRecordingCall();
             }
@@ -4068,7 +4126,7 @@ namespace Js
             }
 #endif
 
-            if (scriptContext->IsScriptContextInDebugMode())
+            if (scriptContext->IsDebuggerRecording())
             {
                 scriptContext->GetDebugContext()->GetProbeContainer()->EndRecordingCall(aReturn, function);
             }
@@ -4201,9 +4259,9 @@ namespace Js
         return (m_pBuiltinFunctionIdMap == NULL) ? -1 : m_pBuiltinFunctionIdMap->Lookup(entryPoint, -1);
     }
 
+#if defined(ENABLE_SCRIPT_PROFILING)
     HRESULT ScriptContext::RegisterLibraryFunction(const char16 *pwszObjectName, const char16 *pwszFunctionName, Js::PropertyId functionPropertyId, JavascriptMethod entryPoint)
     {
-#if defined(ENABLE_SCRIPT_PROFILING)
 #if DEBUG
         const char16 *pwszObjectNameFromProperty = const_cast<char16 *>(GetPropertyName(functionPropertyId)->GetBuffer());
         if (GetPropertyName(functionPropertyId)->IsSymbol())
@@ -4274,10 +4332,8 @@ namespace Js
         {
             return OnFunctionCompiled(functionPropertyId, BuiltInFunctionsScriptId, pwszFunctionName, NULL, NULL);
         }
-#else
-        return S_OK;
-#endif // ENABLE_SCRIPT_PROFILING
     }
+#endif // ENABLE_SCRIPT_PROFILING
 
     void ScriptContext::BindReference(void * addr)
     {
@@ -4303,10 +4359,10 @@ namespace Js
     }
 #endif
 
-    void ScriptContext::FreeFunctionEntryPoint(Js::JavascriptMethod method)
+    void ScriptContext::FreeFunctionEntryPoint(Js::JavascriptMethod codeAddress, Js::JavascriptMethod thunkAddress)
     {
 #if ENABLE_NATIVE_CODEGEN
-        FreeNativeCodeGenAllocation(this, method);
+        FreeNativeCodeGenAllocation(this, codeAddress, thunkAddress);
 #endif
     }
 
@@ -4531,13 +4587,13 @@ void ScriptContext::RegisterConstructorCache(Js::PropertyId propertyId, Js::Cons
 {
     this->threadContext->RegisterConstructorCache(propertyId, cache);
 }
-#endif
 
 JITPageAddrToFuncRangeCache *
 ScriptContext::GetJitFuncRangeCache()
 {
     return jitFuncRangeCache;
 }
+#endif
 
 void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertiesScriptContext()
 {
@@ -4615,6 +4671,7 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
     }
 #endif
 
+#ifdef ENABLE_SCRIPT_PROFILING
     bool ScriptContext::SetDispatchProfile(bool fSet, JavascriptMethod dispatchInvoke)
     {
         if (!fSet)
@@ -4622,18 +4679,14 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
             this->javascriptLibrary->SetDispatchProfile(false, dispatchInvoke);
             return true;
         }
-#ifdef ENABLE_SCRIPT_PROFILING
         else if (m_fTraceDomCall)
         {
             this->javascriptLibrary->SetDispatchProfile(true, dispatchInvoke);
             return true;
         }
-#endif // ENABLE_SCRIPT_PROFILING
-
         return false;
     }
 
-#ifdef ENABLE_SCRIPT_PROFILING
     HRESULT ScriptContext::OnDispatchFunctionEnter(const WCHAR *pwszFunctionName)
     {
         if (m_pProfileCallback2 == NULL)
@@ -4733,13 +4786,16 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
         contextData.isRecyclerVerifyEnabled = FALSE;
         contextData.recyclerVerifyPad = 0;
 #endif
+#ifdef ENABLE_SCRIPT_DEBUGGING
         contextData.debuggingFlagsAddr = GetDebuggingFlagsAddr();
         contextData.debugStepTypeAddr = GetDebugStepTypeAddr();
         contextData.debugFrameAddressAddr = GetDebugFrameAddressAddr();
         contextData.debugScriptIdWhenSetAddr = GetDebugScriptIdWhenSetAddr();
-
+#endif
         contextData.numberAllocatorAddr = (intptr_t)GetNumberAllocator();
+#ifdef ENABLE_SIMDJS
         contextData.isSIMDEnabled = GetConfig()->IsSimdjsEnabled();
+#endif
         CompileAssert(VTableValue::Count == VTABLE_COUNT); // need to update idl when this changes
 
         auto vtblAddresses = GetLibrary()->GetVTableAddresses();
@@ -4902,6 +4958,7 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
         return (intptr_t)GetRecycler();
     }
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
     intptr_t ScriptContext::GetDebuggingFlagsAddr() const
     {
         return this->threadContext->GetDebugManager()->GetDebuggingFlagsAddr();
@@ -4921,16 +4978,19 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
     {
         return (intptr_t)this->threadContext->GetDebugManager()->stepController.GetAddressOfScriptIdWhenSet();
     }
+#endif
 
     bool ScriptContext::GetRecyclerAllowNativeCodeBumpAllocation() const
     {
         return GetRecycler()->AllowNativeCodeBumpAllocation();
     }
 
+#ifdef ENABLE_SIMDJS
     bool ScriptContext::IsSIMDEnabled() const
     {
         return GetConfig()->IsSimdjsEnabled();
     }
+#endif
 
     bool ScriptContext::IsPRNGSeeded() const
     {
@@ -4950,13 +5010,12 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
 
     IR::JnHelperMethod ScriptContext::GetDOMFastPathHelper(intptr_t funcInfoAddr)
     {
-        IR::JnHelperMethod helper;
+        IR::JnHelperMethod helper = IR::HelperInvalid;
 
         m_domFastPathHelperMap->LockResize();
-        bool found = m_domFastPathHelperMap->TryGetValue(funcInfoAddr, &helper);
+        m_domFastPathHelperMap->TryGetValue(funcInfoAddr, &helper);
         m_domFastPathHelperMap->UnlockResize();
 
-        Assert(found);
         return helper;
     }
 #endif
@@ -5485,7 +5544,11 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
             Output::Print(_u("\n\n"));
 
             // If in verbose mode, dump data for each FunctionBody
-            if (Configuration::Global.flags.Verbose && rejitStatsMap != NULL)
+            if (
+#if defined(FLAG) || defined(FLAG_REGOVR_EXP)
+                Configuration::Global.flags.Verbose &&
+#endif
+                rejitStatsMap != nullptr)
             {
                 // Aggregated data
                 Output::Print(_u("%-30s %14s %14s\n"), _u("Function (#),"), _u("Bailout Count,"), _u("Rejit Count"));
@@ -5548,6 +5611,9 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
 
             }
         }
+
+        this->ClearBailoutReasonCountsMap();
+        this->ClearRejitReasonCountsArray();
 #endif
 
 #ifdef FIELD_ACCESS_STATS
@@ -5687,15 +5753,18 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
             }
         }
     }
-    void ScriptContext::LogRejit(Js::FunctionBody *body, uint reason)
+    void ScriptContext::LogRejit(Js::FunctionBody *body, RejitReason reason)
     {
-        Assert(reason < NumRejitReasons);
-        rejitReasonCounts[reason]++;
+        byte reasonIndex = static_cast<byte>(reason);
+        Assert(reasonIndex < NumRejitReasons);
+        rejitReasonCounts[reasonIndex]++;
 
+#if defined(FLAG) || defined(FLAG_REGOVR_EXP)
         if (Js::Configuration::Global.flags.Verbose)
         {
-            LogDataForFunctionBody(body, reason, true);
+            LogDataForFunctionBody(body, reasonIndex, true);
         }
+#endif
     }
     void ScriptContext::LogBailout(Js::FunctionBody *body, uint kind)
     {
@@ -5710,9 +5779,39 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
             bailoutReasonCounts->Item(kind, val);
         }
 
+#if defined(FLAG) || defined(FLAG_REGOVR_EXP)
         if (Js::Configuration::Global.flags.Verbose)
         {
             LogDataForFunctionBody(body, kind, false);
+        }
+#endif
+    }
+    void ScriptContext::ClearBailoutReasonCountsMap()
+    {
+        if (this->bailoutReasonCounts != nullptr)
+        {
+            this->bailoutReasonCounts->Clear();
+        }
+        if (this->bailoutReasonCountsCap != nullptr)
+        {
+            this->bailoutReasonCountsCap->Clear();
+        }
+    }
+    void ScriptContext::ClearRejitReasonCountsArray()
+    {
+        if (this->rejitReasonCounts != nullptr)
+        {
+            for (UINT16 i = 0; i < NumRejitReasons; i++)
+            {
+                this->rejitReasonCounts[i] = 0;
+            }
+        }
+        if (this->rejitReasonCountsCap != nullptr)
+        {
+            for (UINT16 i = 0; i < NumRejitReasons; i++)
+            {
+                this->rejitReasonCountsCap[i] = 0;
+            }
         }
     }
 #endif
@@ -5728,46 +5827,91 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
     }
 #endif
 
+#ifdef ENABLE_SCRIPT_DEBUGGING
+    DebugContext* ScriptContext::GetDebugContext() const
+    {
+        Assert(this->debugContext != nullptr);
+
+        if (this->debugContext->IsClosed())
+        {
+            // Once DebugContext is closed we should assume it's not there
+            // The actual deletion of debugContext happens in ScriptContext destructor
+            return nullptr;
+        }
+
+        return this->debugContext;
+    }
+#endif
+
     bool ScriptContext::IsScriptContextInNonDebugMode() const
     {
-        if (this->debugContext != nullptr)
+#ifdef ENABLE_SCRIPT_DEBUGGING
+        if (this->GetDebugContext() != nullptr)
         {
             return this->GetDebugContext()->IsDebugContextInNonDebugMode();
         }
+#endif
         return true;
     }
 
+
     bool ScriptContext::IsScriptContextInDebugMode() const
     {
-        if (this->debugContext != nullptr)
+#ifdef ENABLE_SCRIPT_DEBUGGING
+        if (this->GetDebugContext() != nullptr)
         {
             return this->GetDebugContext()->IsDebugContextInDebugMode();
         }
+#endif
         return false;
     }
 
     bool ScriptContext::IsScriptContextInSourceRundownOrDebugMode() const
     {
-        if (this->debugContext != nullptr)
+#ifdef ENABLE_SCRIPT_DEBUGGING
+        if (this->GetDebugContext() != nullptr)
         {
             return this->GetDebugContext()->IsDebugContextInSourceRundownOrDebugMode();
         }
+#endif
         return false;
     }
 
-    bool ScriptContext::IsIntlEnabled()
+#ifdef ENABLE_SCRIPT_DEBUGGING
+    bool ScriptContext::IsDebuggerRecording() const
     {
-        if (GetConfig()->IsIntlEnabled())
+        if (this->GetDebugContext() != nullptr)
         {
-#ifdef ENABLE_GLOBALIZATION
-            // This will try to load globalization dlls if not already loaded.
-            Js::DelayLoadWindowsGlobalization* globLibrary = GetThreadContext()->GetWindowsGlobalizationLibrary();
-            return globLibrary->HasGlobalizationDllLoaded();
-#endif
+            return this->GetDebugContext()->IsDebuggerRecording();
         }
         return false;
     }
 
+    void ScriptContext::SetIsDebuggerRecording(bool isDebuggerRecording)
+    {
+        if (this->GetDebugContext() != nullptr)
+        {
+            this->GetDebugContext()->SetIsDebuggerRecording(isDebuggerRecording);
+        }
+    }
+#endif
+
+    bool ScriptContext::IsIntlEnabled()
+    {
+#ifdef ENABLE_INTL_OBJECT
+        if (GetConfig()->IsIntlEnabled())
+        {
+#ifdef INTL_WINGLOB
+            // This will try to load globalization dlls if not already loaded.
+            Js::DelayLoadWindowsGlobalization* globLibrary = GetThreadContext()->GetWindowsGlobalizationLibrary();
+            return globLibrary->HasGlobalizationDllLoaded();
+#else
+            return true;
+#endif
+        }
+#endif
+        return false;
+    }
 
 #ifdef INLINE_CACHE_STATS
     void ScriptContext::LogCacheUsage(Js::PolymorphicInlineCache *cache, bool isGetter, Js::PropertyId propertyId, bool hit, bool collision)
@@ -5985,7 +6129,6 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
 
         OUTPUT_FLUSH();
     }
-#endif
 
     // Info:        Append sourceString to stringBuilder after escaping charToEscape with escapeChar.
     //              "SomeBadly\0Formed\0String" => "SomeBadly\\\0Formed\\\0String"
@@ -6061,6 +6204,7 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
 
         return nameLen;
     }
+#endif
 
     Field(Js::Var)* ScriptContext::GetModuleExportSlotArrayAddress(uint moduleIndex, uint slotIndex)
     {
@@ -6076,6 +6220,7 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
         return moduleRecord->GetLocalExportSlots();
     }
 
+#if ENABLE_NATIVE_CODEGEN
     void JITPageAddrToFuncRangeCache::ClearCache()
     {
         if (jitPageAddrToFuncRangeMap != nullptr)
@@ -6201,5 +6346,6 @@ void ScriptContext::RegisterPrototypeChainEnsuredToHaveOnlyWritableDataPropertie
     {
         return largeJitFuncToSizeMap;
     }
+#endif
 
 } // End namespace Js

@@ -1712,7 +1712,7 @@ namespace TTD
     {
         if(readSeparator)
         {
-            byte sep;
+            byte sep = 0;
             this->ReadBytesInto_Fixed<byte>(sep);
 
             TTDAssert((NSTokens::Separator)sep == NSTokens::Separator::CommaSeparator, "Error in parse.");
@@ -1723,7 +1723,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        byte key;
+        byte key = 0;
         this->ReadBytesInto_Fixed<byte>(key);
 
         TTDAssert((NSTokens::Key)key == keyCheck, "Error in parse.");
@@ -1733,7 +1733,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        byte tok;
+        byte tok = 0;
         this->ReadBytesInto_Fixed<byte>(tok);
 
         TTDAssert(tok == '[', "Error in parse.");
@@ -1741,7 +1741,7 @@ namespace TTD
 
     void BinaryFormatReader::ReadSequenceEnd()
     {
-        byte tok;
+        byte tok = 0;
         this->ReadBytesInto_Fixed<byte>(tok);
 
         TTDAssert(tok == ']', "Error in parse.");
@@ -1751,7 +1751,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        byte tok;
+        byte tok = 0;
         this->ReadBytesInto_Fixed<byte>(tok);
 
         TTDAssert(tok == '{', "Error in parse.");
@@ -1759,7 +1759,7 @@ namespace TTD
 
     void BinaryFormatReader::ReadRecordEnd()
     {
-        byte tok;
+        byte tok = 0;
         this->ReadBytesInto_Fixed<byte>(tok);
 
         TTDAssert(tok == '}', "Error in parse.");
@@ -1769,7 +1769,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        byte tok;
+        byte tok = 0;
         this->ReadBytesInto_Fixed<byte>(tok);
 
         TTDAssert(tok == 0, "Error in parse.");
@@ -1779,7 +1779,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        byte b;
+        byte b = 0;
         this->ReadBytesInto_Fixed<byte>(b);
 
         return b;
@@ -1789,7 +1789,7 @@ namespace TTD
     {
         this->ReadKey(keyCheck, readSeparator);
 
-        byte b;
+        byte b = 0;
         this->ReadBytesInto_Fixed<byte>(b);
 
         return !!b;
@@ -1799,7 +1799,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        int32 i;
+        int32 i = 0;
         this->ReadBytesInto_Fixed<int32>(i);
 
         return i;
@@ -1809,7 +1809,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint32 i;
+        uint32 i = 0;
         this->ReadBytesInto_Fixed<uint32>(i);
 
         return i;
@@ -1819,7 +1819,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        int64 i;
+        int64 i = 0;
         this->ReadBytesInto_Fixed<int64>(i);
 
         return i;
@@ -1829,7 +1829,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint64 i;
+        uint64 i = 0;
         this->ReadBytesInto_Fixed<uint64>(i);
 
         return i;
@@ -1839,7 +1839,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        double d;
+        double d = 0.0;
         this->ReadBytesInto_Fixed<double>(d);
 
         return d;
@@ -1849,7 +1849,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        TTD_PTR_ID addr;
+        TTD_PTR_ID addr = TTD_INVALID_PTR_ID;
         this->ReadBytesInto_Fixed<TTD_PTR_ID>(addr);
 
         return addr;
@@ -1859,7 +1859,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        TTD_LOG_PTR_ID tag;
+        TTD_LOG_PTR_ID tag = TTD_INVALID_LOG_PTR_ID;
         this->ReadBytesInto_Fixed<TTD_LOG_PTR_ID>(tag);
 
         return tag;
@@ -1869,7 +1869,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint32 tag;
+        uint32 tag = 0;
         this->ReadBytesInto_Fixed<uint32>(tag);
 
         return tag;
@@ -1879,7 +1879,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint32 sizeField;
+        uint32 sizeField = 0;
         this->ReadBytesInto_Fixed<uint32>(sizeField);
 
         if(sizeField == UINT32_MAX)
@@ -1898,7 +1898,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint32 sizeField;
+        uint32 sizeField = 0;
         this->ReadBytesInto_Fixed<uint32>(sizeField);
 
         if(sizeField == UINT32_MAX)
@@ -1917,7 +1917,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint32 charLen;
+        uint32 charLen = 0;
         this->ReadBytesInto_Fixed<uint32>(charLen);
 
         char16* cbuff = alloc.SlabAllocateArray<char16>(charLen + 1);
@@ -1931,7 +1931,7 @@ namespace TTD
     {
         this->ReadSeperator(readSeparator);
 
-        uint32 charLen;
+        uint32 charLen = 0;
         this->ReadBytesInto_Fixed<uint32>(charLen);
 
         char16* cbuff = alloc.SlabAllocateArray<char16>(charLen + 1);

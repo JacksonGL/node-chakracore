@@ -1,4 +1,15 @@
-#!/usr/bin/env python
+#!/bin/sh
+
+# Locate python2 interpreter and re-execute the script.  Note that the
+# mix of single and double quotes is intentional, as is the fact that
+# the ] goes on a new line.
+_=[ 'exec' '/bin/sh' '-c' '''
+which python2.7 >/dev/null && exec python2.7 "$0" "$@"
+which python2 >/dev/null && exec python2 "$0" "$@"
+exec python "$0" "$@"
+''' "$0" "$@"
+]
+del _
 
 import sys
 if sys.version_info[0] != 2 or sys.version_info[1] not in (6, 7):
@@ -47,8 +58,8 @@ parser = optparse.OptionParser()
 
 valid_os = ('win', 'mac', 'solaris', 'freebsd', 'openbsd', 'linux',
             'android', 'aix')
-valid_arch = ('arm', 'arm64', 'ia32', 'mips', 'mipsel', 'ppc', 'ppc64', 'x32',
-              'x64', 'x86', 's390', 's390x')
+valid_arch = ('arm', 'arm64', 'ia32', 'mips', 'mipsel', 'mips64el', 'ppc',
+              'ppc64', 'x32','x64', 'x86', 's390', 's390x')
 valid_arm_float_abi = ('soft', 'softfp', 'hard')
 valid_arm_fpu = ('vfp', 'vfpv3', 'vfpv3-d16', 'neon')
 valid_mips_arch = ('loongson', 'r1', 'r2', 'r6', 'rx')
@@ -64,6 +75,8 @@ shared_optgroup = optparse.OptionGroup(parser, "Shared libraries",
 intl_optgroup = optparse.OptionGroup(parser, "Internationalization",
     "Flags that lets you enable i18n features in Node.js as well as which "
     "library you want to build against.")
+http2_optgroup = optparse.OptionGroup(parser, "HTTP2",
+    "Flags that allows you to control HTTP2 features in Node.js")
 
 # Options should be in alphabetical order but keep --prefix at the top,
 # that's arguably the one people will be looking for most.
@@ -288,6 +301,11 @@ parser.add_option('--enable-d8',
     dest='enable_d8',
     help=optparse.SUPPRESS_HELP)  # Unsupported, undocumented.
 
+parser.add_option('--enable-trace-maps',
+    action='store_true',
+    dest='trace_maps',
+    help='Enable the --trace-maps flag in V8 (use at your own risk)')
+
 parser.add_option('--v8-options',
     action='store',
     dest='v8_options',
@@ -358,7 +376,7 @@ intl_optgroup.add_option('--without-intl',
     action='store_const',
     dest='with_intl',
     const='none',
-    help='Disable Intl, same as --with-intl=none')
+    help='Disable Intl, same as --with-intl=none (disables inspector)')
 
 intl_optgroup.add_option('--with-icu-path',
     action='store',
@@ -391,6 +409,16 @@ intl_optgroup.add_option('--download-path',
     help='Download directory [default: %default]')
 
 parser.add_option_group(intl_optgroup)
+
+http2_optgroup.add_option('--debug-http2',
+    action='store_true',
+    dest='debug_http2',
+    help='build with http2 debug statements on (default is false)')
+
+http2_optgroup.add_option('--debug-nghttp2',
+    action='store_true',
+    dest='debug_nghttp2',
+    help='build nghttp2 with DEBUGBUILD (default is false)')
 
 parser.add_option('--with-perfctr',
     action='store_true',
@@ -431,7 +459,7 @@ parser.add_option('--without-snapshot',
 parser.add_option('--without-ssl',
     action='store_true',
     dest='without_ssl',
-    help='build without SSL')
+    help='build without SSL (disables crypto, https, inspector, etc.)')
 
 parser.add_option('--without-node-options',
     action='store_true',
@@ -467,13 +495,32 @@ parser.add_option('--no-browser-globals',
 parser.add_option('--without-inspector',
     action='store_true',
     dest='without_inspector',
-    help='disable experimental V8 inspector support')
+    help='disable the V8 inspector protocol')
 
 parser.add_option('--engine',
     action='store',
     dest='engine',
     default='chakracore',
     help='Use specified JS engine (default is ChakraCore)')
+
+parser.add_option('--chakracore-test-build',
+    action='store_true',
+    dest='chakracore_test_build',
+    default=False,
+    help='Build "test" build of ChakraCore (requires engine to be ChakraCore)')
+
+parser.add_option('--chakracore-ninja-build',
+    action='store_true',
+    dest='chakracore_ninja_build',
+    default=False,
+    help='Enable build of ChakraCore using ninja (requires engine to be ChakraCore)')
+
+parser.add_option('--chakracore-lto-build',
+    action='store_true',
+    dest='chakracore_lto_build',
+    default=False,
+    help='Enable build of ChakraCore using LTO (requires engine to be ChakraCore)')
+
 
 parser.add_option('--shared',
     action='store_true',
@@ -641,12 +688,14 @@ def check_compiler(o):
     # to a version that is not completely ancient.
     warn('C compiler too old, need gcc 4.2 or clang 3.2 (CC=%s)' % CC)
 
-  # Need llvm_version or gas_version when openssl asm files are compiled
+  if is_clang:
+    o['variables']['llvm_version'] = get_llvm_version(CC)
+
+  # Need xcode_version or gas_version when openssl asm files are compiled.
   if options.without_ssl or options.openssl_no_asm or options.shared_openssl:
     return
 
   if is_clang:
-    o['variables']['llvm_version'] = get_llvm_version(CC)
     if sys.platform == 'darwin':
       o['variables']['xcode_version'] = get_xcode_version(CC)
   else:
@@ -787,6 +836,9 @@ def configure_arm(o):
 
   o['variables']['arm_fpu'] = options.arm_fpu or arm_fpu
 
+  if flavor == 'win':
+    o['msvs_windows_sdk_version'] = 'v10.0'
+
 
 def configure_mips(o):
   can_use_fpu_instructions = (options.mips_float_abi != 'soft')
@@ -899,6 +951,16 @@ def configure_node(o):
   if options.enable_static:
     o['variables']['node_target_type'] = 'static_library'
 
+  if options.debug_http2:
+    o['variables']['debug_http2'] = 1
+  else:
+    o['variables']['debug_http2'] = 'false'
+
+  if options.debug_nghttp2:
+    o['variables']['debug_nghttp2'] = 1
+  else:
+    o['variables']['debug_nghttp2'] = 'false'
+
   o['variables']['node_no_browser_globals'] = b(options.no_browser_globals)
   o['variables']['node_shared'] = b(options.shared)
   node_module_version = getmoduleversion.get_version()
@@ -962,7 +1024,9 @@ def configure_v8(o):
   o['variables']['v8_no_strict_aliasing'] = 1  # Work around compiler bugs.
   o['variables']['v8_optimized_debug'] = 0  # Compile with -O0 in debug builds.
   o['variables']['v8_random_seed'] = 0  # Use a random seed for hash tables.
+  o['variables']['v8_promise_internal_field_count'] = 1 # Add internal field to promises for async hooks.
   o['variables']['v8_use_snapshot'] = 'false' if options.without_snapshot else 'true'
+  o['variables']['v8_trace_maps'] = 1 if options.trace_maps else 0
   o['variables']['node_use_v8_platform'] = b(not options.without_v8_platform)
   o['variables']['node_use_bundled_v8'] = b(not options.without_bundled_v8)
   o['variables']['force_dynamic_crt'] = 1 if options.shared else 0
@@ -986,12 +1050,18 @@ def configure_openssl(o):
     o['variables']['openssl_fips'] = options.openssl_fips
     fips_dir = os.path.join(root_dir, 'deps', 'openssl', 'fips')
     fips_ld = os.path.abspath(os.path.join(fips_dir, 'fipsld'))
+    # LINK is for Makefiles, LD/LDXX is for ninja
     o['make_fips_settings'] = [
       ['LINK', fips_ld + ' <(openssl_fips)/bin/fipsld'],
+      ['LD', fips_ld + ' <(openssl_fips)/bin/fipsld'],
+      ['LDXX', fips_ld + ' <(openssl_fips)/bin/fipsld'],
     ]
   else:
     o['variables']['openssl_fips'] = ''
-
+    try:
+      os.remove('config_fips.gypi')
+    except OSError:
+      pass
 
   if options.without_ssl:
     def without_ssl_error(option):
@@ -1288,7 +1358,6 @@ def configure_intl(o):
     'stubdata': 'stubdata',
     'common': 'common',
     'i18n': 'i18n',
-    'io': 'io',
     'tools': 'tools/toolutil',
     'genccode': 'tools/genccode',
     'genrb': 'tools/genrb',
@@ -1316,6 +1385,22 @@ def configure_engine(o):
   o['variables']['node_engine'] = engine
   if engine != 'v8':
     o['variables']['node_use_bundled_v8'] = b(False)
+  if engine == 'chakracore':
+    o['variables']['chakracore_build_config'] = o['default_configuration']
+    if options.chakracore_test_build:
+      o['variables']['chakracore_build_config'] = 'Test'
+    if options.chakracore_ninja_build:
+      o['variables']['chakracore_parallel_build_flags'] = [ "--ninja" ]
+    else:
+      o['variables']['chakracore_parallel_build_flags'] = []
+    if options.chakracore_lto_build:
+      o['variables']['chakracore_use_lto'] = "true"
+      o['variables']['chakracore_lto_build_flags'] = [ "--lto" ]
+    else:
+      o['variables']['chakracore_use_lto'] = "false"
+      o['variables']['chakracore_lto_build_flags'] = [ ]
+
+
 
 output = {
   'variables': {},
@@ -1387,6 +1472,8 @@ config = {
   'BUILDTYPE': 'Debug' if options.debug else 'Release',
   'USE_XCODE': str(int(options.use_xcode or 0)),
   'PYTHON': sys.executable,
+  'NODE_TARGET_TYPE': variables['node_target_type'] if options.enable_static \
+      else '',
 }
 
 if options.prefix:

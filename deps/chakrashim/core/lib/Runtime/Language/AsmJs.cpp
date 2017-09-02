@@ -62,7 +62,7 @@ namespace Js
 
         if (fnc.HasNonSimpleParameterList())
         {
-            return m.Fail(fn, _u("default & rest args not allowed"));
+            return m.Fail(fn, _u("default, rest & destructuring args not allowed"));
         }
 
         if (fnc.IsStaticMember())
@@ -88,6 +88,11 @@ namespace Js
         if (!isGlobal && fnc.nestedCount != 0)
         {
             return m.Fail(fn, _u("closure functions are not allowed"));
+        }
+
+        if (!fnc.IsAsmJsAllowed())
+        {
+            return m.Fail(fn, _u("invalid function flags detected"));
         }
 
         return true;
@@ -139,7 +144,6 @@ namespace Js
         case knopCall: {
             ParseNode* target;
             AsmJsFunctionDeclaration* sym;
-            AsmJsMathFunction* mathSym;
             AsmJsSIMDFunction* simdSym;
 
             target = coercionNode->sxCall.pnodeTarget;
@@ -210,9 +214,8 @@ namespace Js
 
             *coercion = AsmJS_FRound;
             sym = m.LookupFunction(target->name());
-            mathSym = (AsmJsMathFunction*)sym;
 
-            if (!(mathSym && mathSym->GetMathBuiltInFunction() == AsmJSMathBuiltin_fround))
+            if (!AsmJsMathFunction::IsFround(sym))
             {
                 return m.Fail( coercionNode, _u("call must be to fround coercion") );
             }
@@ -386,7 +389,7 @@ namespace Js
     bool AsmJSCompiler::CheckGlobalVariableInitImport( AsmJsModuleCompiler &m, PropertyName varName, ParseNode *initNode, bool isMutable /*= true*/)
     {
         AsmJSCoercion coercion;
-        ParseNode *coercedExpr;
+        ParseNode *coercedExpr = nullptr;
         if( !CheckTypeAnnotation( m, initNode, &coercion, &coercedExpr ) )
         {
             return false;
@@ -522,7 +525,7 @@ namespace Js
         {
             lib = ParserWrapper::DotMember(base);
             base = ParserWrapper::DotBase(base);
-
+#ifdef ENABLE_SIMDJS
             if (m.GetScriptContext()->GetConfig()->IsSimdjsEnabled())
             {
                 if (!lib || (lib->GetPropertyId() != PropertyIds::Math && lib->GetPropertyId() != PropertyIds::SIMD))
@@ -531,6 +534,7 @@ namespace Js
                 }
             }
             else
+#endif
             {
                 if (!lib || lib->GetPropertyId() != PropertyIds::Math)
                 {
@@ -541,13 +545,13 @@ namespace Js
 
         if( ParserWrapper::IsNameDeclaration(base) && base->name() == m.GetStdLibArgName() )
         {
-
+#ifdef ENABLE_SIMDJS
             if (m.GetScriptContext()->GetConfig()->IsSimdjsEnabled())
             {
                 if (lib && lib->GetPropertyId() == PropertyIds::SIMD)
                 {
                     // global.SIMD.xxx
-                    AsmJsSIMDFunction *simdFunc;
+                    AsmJsSIMDFunction *simdFunc = nullptr;
 
                     if (!m.LookupStdLibSIMDName(field->GetPropertyId(), field, &simdFunc))
                     {
@@ -567,7 +571,7 @@ namespace Js
                     return true;
                 }
             }
-
+#endif
             // global.Math.xxx
             MathBuiltin mathBuiltin;
             if (m.LookupStandardLibraryMathName(field, &mathBuiltin))
@@ -766,7 +770,7 @@ namespace Js
                 }
                 else if (decl->nop != knopConstDecl && decl->nop != knopVarDecl)
                 {
-                    break;
+                    goto varDeclEnd;
                 }
 
                 if (decl->sxVar.pnodeInit && decl->sxVar.pnodeInit->nop == knopArray)
@@ -1249,7 +1253,9 @@ AsmJsCompilationError:
         {
             size = 2048;
         }
+#ifdef ENABLE_SCRIPT_DEBUGGING
         scriptContext->RaiseMessageToDebugger(messageType, buf, scriptContext->GetUrl());
+#endif
         if (PHASE_TRACE1(AsmjsPhase) || PHASE_TESTTRACE1(AsmjsPhase))
         {
             Output::PrintBuffer(buf, size);

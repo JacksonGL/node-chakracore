@@ -25,20 +25,19 @@ const path = require('path');
 const fs = require('fs');
 const assert = require('assert');
 const os = require('os');
-const child_process = require('child_process');
+const { exec, execSync, spawn, spawnSync } = require('child_process');
 const stream = require('stream');
-const buffer = require('buffer');
 const util = require('util');
 const Timer = process.binding('timer_wrap').Timer;
-const execSync = require('child_process').execSync;
+const { fixturesDir } = require('./fixtures');
 
 const testRoot = process.env.NODE_TEST_DIR ?
   fs.realpathSync(process.env.NODE_TEST_DIR) : path.resolve(__dirname, '..');
 
 const noop = () => {};
 
-exports.noop = noop;
-exports.fixturesDir = path.join(__dirname, '..', 'fixtures');
+exports.fixturesDir = fixturesDir;
+
 exports.tmpDirName = 'tmp';
 // PORT should match the definition in test/testpy/__init__.py.
 exports.PORT = +process.env.NODE_COMMON_PORT || 12346;
@@ -46,7 +45,7 @@ exports.isWindows = process.platform === 'win32';
 exports.isChakraEngine = process.jsEngine === 'chakracore';
 exports.isWOW64 = exports.isWindows &&
                   (process.env.PROCESSOR_ARCHITEW6432 !== undefined);
-exports.isAix = process.platform === 'aix';
+exports.isAIX = process.platform === 'aix';
 exports.isLinuxPPCBE = (process.platform === 'linux') &&
                        (process.arch === 'ppc64') &&
                        (os.endianness() === 'BE');
@@ -56,8 +55,6 @@ exports.isLinux = process.platform === 'linux';
 exports.isOSX = process.platform === 'darwin';
 
 exports.enoughTestMem = os.totalmem() > 0x40000000; /* 1 Gb */
-exports.bufferMaxSizeMsg = new RegExp(
-  `^RangeError: "size" argument must not be larger than ${buffer.kMaxLength}$`);
 const cpus = os.cpus();
 exports.enoughTestCpu = Array.isArray(cpus) &&
                         (cpus.length > 1 || cpus[0].speed > 999);
@@ -191,7 +188,7 @@ Object.defineProperty(exports, 'inFreeBSDJail', {
     if (inFreeBSDJail !== null) return inFreeBSDJail;
 
     if (exports.isFreeBSD &&
-      child_process.execSync('sysctl -n security.jail.jailed').toString() ===
+      execSync('sysctl -n security.jail.jailed').toString() ===
       '1\n') {
       inFreeBSDJail = true;
     } else {
@@ -225,7 +222,7 @@ Object.defineProperty(exports, 'localhostIPv4', {
 });
 
 // opensslCli defined lazily to reduce overhead of spawnSync
-Object.defineProperty(exports, 'opensslCli', {get: function() {
+Object.defineProperty(exports, 'opensslCli', { get: function() {
   if (opensslCli !== null) return opensslCli;
 
   if (process.config.variables.node_shared_openssl) {
@@ -238,17 +235,17 @@ Object.defineProperty(exports, 'opensslCli', {get: function() {
 
   if (exports.isWindows) opensslCli += '.exe';
 
-  const opensslCmd = child_process.spawnSync(opensslCli, ['version']);
+  const opensslCmd = spawnSync(opensslCli, ['version']);
   if (opensslCmd.status !== 0 || opensslCmd.error !== undefined) {
     // openssl command cannot be executed
     opensslCli = false;
   }
   return opensslCli;
-}, enumerable: true});
+}, enumerable: true });
 
 Object.defineProperty(exports, 'hasCrypto', {
   get: function() {
-    return process.versions.openssl ? true : false;
+    return Boolean(process.versions.openssl);
   }
 });
 
@@ -258,21 +255,21 @@ Object.defineProperty(exports, 'hasFipsCrypto', {
   }
 });
 
-if (exports.isWindows) {
-  exports.PIPE = '\\\\.\\pipe\\libuv-test';
-  if (process.env.TEST_THREAD_ID) {
-    exports.PIPE += `.${process.env.TEST_THREAD_ID}`;
-  }
-} else {
-  exports.PIPE = `${exports.tmpDir}/test.sock`;
+{
+  const pipePrefix = exports.isWindows ? '\\\\.\\pipe\\' : `${exports.tmpDir}/`;
+  const pipeName = `node-test.${process.pid}.sock`;
+  exports.PIPE = pipePrefix + pipeName;
 }
 
-const ifaces = os.networkInterfaces();
-exports.hasIPv6 = Object.keys(ifaces).some(function(name) {
-  return /lo/.test(name) && ifaces[name].some(function(info) {
-    return info.family === 'IPv6';
+{
+  const iFaces = os.networkInterfaces();
+  const re = exports.isWindows ? /Loopback Pseudo-Interface/ : /lo/;
+  exports.hasIPv6 = Object.keys(iFaces).some(function(name) {
+    return re.test(name) && iFaces[name].some(function(info) {
+      return info.family === 'IPv6';
+    });
   });
-});
+}
 
 /*
  * Check that when running a test with
@@ -288,7 +285,7 @@ exports.childShouldThrowAndAbort = function() {
   }
   testCmd += `"${process.argv[0]}" --abort-on-uncaught-exception `;
   testCmd += `"${process.argv[1]}" child`;
-  const child = child_process.exec(testCmd);
+  const child = exec(testCmd);
   child.on('exit', function onExit(exitCode, signal) {
     const errMsg = 'Test should have aborted ' +
                    `but instead exited with exit code ${exitCode}` +
@@ -308,8 +305,6 @@ exports.ddCommand = function(filename, kilobytes) {
 
 
 exports.spawnPwd = function(options) {
-  const spawn = require('child_process').spawn;
-
   if (exports.isWindows) {
     return spawn('cmd.exe', ['/d', '/c', 'cd'], options);
   } else {
@@ -319,8 +314,6 @@ exports.spawnPwd = function(options) {
 
 
 exports.spawnSyncPwd = function(options) {
-  const spawnSync = require('child_process').spawnSync;
-
   if (exports.isWindows) {
     return spawnSync('cmd.exe', ['/d', '/c', 'cd'], options);
   } else {
@@ -335,7 +328,7 @@ exports.platformTimeout = function(ms) {
   if (global.__coverage__)
     ms = 4 * ms;
 
-  if (exports.isAix)
+  if (exports.isAIX)
     return 2 * ms; // default localhost speed is slower on AIX
 
   if (process.arch !== 'arm')
@@ -428,13 +421,14 @@ exports.allowGlobals = allowGlobals;
 function leakedGlobals() {
   const leaked = [];
 
-  // eslint-disable-next-line no-var
-  for (var val in global)
-    if (!knownGlobals.includes(global[val]))
+  for (const val in global) {
+    if (!knownGlobals.includes(global[val])) {
       leaked.push(val);
+    }
+  }
 
   if (global.__coverage__) {
-    return leaked.filter((varname) => !/^(cov_|__cov)/.test(varname));
+    return leaked.filter((varname) => !/^(?:cov_|__cov)/.test(varname));
   } else {
     return leaked;
   }
@@ -488,7 +482,7 @@ exports.mustCallAtLeast = function(fn, minimum) {
   return _mustCallInner(fn, minimum, 'minimum');
 };
 
-function _mustCallInner(fn, criteria, field) {
+function _mustCallInner(fn, criteria = 1, field) {
   if (typeof fn === 'number') {
     criteria = fn;
     fn = noop;
@@ -496,9 +490,7 @@ function _mustCallInner(fn, criteria, field) {
     fn = noop;
   }
 
-  if (criteria === undefined)
-    criteria = 1;
-  else if (typeof criteria !== 'number')
+  if (typeof criteria !== 'number')
     throw new TypeError(`Invalid ${field} value: ${criteria}`);
 
   const context = {
@@ -570,8 +562,13 @@ exports.mustNotCall = function(msg) {
   };
 };
 
-exports.skip = function(msg) {
+exports.printSkipMessage = function(msg) {
   console.log(`1..0 # Skipped: ${msg}`);
+};
+
+exports.skip = function(msg) {
+  exports.printSkipMessage(msg);
+  process.exit(0);
 };
 
 // A stream to push an array into a REPL
@@ -609,10 +606,10 @@ exports.nodeProcessAborted = function nodeProcessAborted(exitCode, signal) {
   // On Windows, 'aborts' are of 2 types, depending on the context:
   // (i) Forced access violation, if --abort-on-uncaught-exception is on
   // which corresponds to exit code 3221225477 (0xC0000005)
-  // (ii) raise(SIGABRT) or abort(), which lands up in CRT library calls
-  // which corresponds to exit code 3.
+  // (ii) Otherwise, _exit(134) which is called in place of abort() due to
+  // raising SIGABRT exiting with ambiguous exit code '3' by default
   if (exports.isWindows)
-    expectedExitCodes = [3221225477, 3];
+    expectedExitCodes = [0xC0000005, 134];
 
   // When using --abort-on-uncaught-exception, V8 will use
   // base::OS::Abort to terminate the process.
@@ -628,7 +625,27 @@ exports.nodeProcessAborted = function nodeProcessAborted(exitCode, signal) {
   }
 };
 
+function areAllValuesStringEqual(obj) {
+  let exemplar;
+  for (const key of Object.keys(obj)) {
+    if (exemplar === undefined) {
+      exemplar = obj[key].toString();
+    } else if (exemplar !== obj[key].toString()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 exports.engineSpecificMessage = function(messageObject) {
+  // This will compare the fields of the messageObject as strings which should
+  // cover both literal strings and regexps. Nothing else is currently expected
+  // to be passed to this method and at worst case it will generate a false
+  // positive that can be addressed as necessary.
+  assert.ok(!areAllValuesStringEqual(messageObject),
+            'Unnecessary usage of \'engineSpecificMessage\'');
+
   const jsEngine = process.jsEngine || 'v8'; //default is 'v8'
   return messageObject[jsEngine];
 };
@@ -695,27 +712,69 @@ Object.defineProperty(exports, 'hasIntl', {
   }
 });
 
+Object.defineProperty(exports, 'hasSmallICU', {
+  get: function() {
+    return process.binding('config').hasSmallICU;
+  }
+});
+
 // Useful for testing expected internal/error objects
-exports.expectsError = function expectsError({code, type, message}) {
-  return function(error) {
-    assert.strictEqual(error.code, code);
-    if (type !== undefined)
+exports.expectsError = function expectsError(fn, settings, exact) {
+  if (typeof fn !== 'function') {
+    exact = settings;
+    settings = fn;
+    fn = undefined;
+  }
+  const innerFn = exports.mustCall(function(error) {
+    assert.strictEqual(error.code, settings.code);
+    if ('type' in settings) {
+      const type = settings.type;
+      if (type !== Error && !Error.isPrototypeOf(type)) {
+        throw new TypeError('`settings.type` must inherit from `Error`');
+      }
       assert(error instanceof type,
-             `${error} is not the expected type ${type}`);
-    if (message instanceof RegExp) {
-      assert(message.test(error.message),
-             `${error.message} does not match ${message}`);
-    } else if (typeof message === 'string') {
-      assert.strictEqual(error.message, message);
+             `${error.name} is not instance of ${type.name}`);
+    }
+    if ('message' in settings) {
+      const message = settings.message;
+      if (typeof message === 'string') {
+        assert.strictEqual(error.message, message);
+      } else {
+        assert(message.test(error.message),
+               `${error.message} does not match ${message}`);
+      }
+    }
+    if ('name' in settings) {
+      assert.strictEqual(error.name, settings.name);
+    }
+    if (error.constructor.name === 'AssertionError') {
+      ['generatedMessage', 'actual', 'expected', 'operator'].forEach((key) => {
+        if (key in settings) {
+          const actual = error[key];
+          const expected = settings[key];
+          assert.strictEqual(actual, expected,
+                             `${key}: expected ${expected}, not ${actual}`);
+        }
+      });
     }
     return true;
-  };
+  }, exact);
+  if (fn) {
+    assert.throws(fn, innerFn);
+    return;
+  }
+  return innerFn;
 };
 
 exports.skipIfInspectorDisabled = function skipIfInspectorDisabled() {
   if (process.config.variables.v8_enable_inspector === 0) {
     exports.skip('V8 inspector is disabled');
-    process.exit(0);
+  }
+};
+
+exports.skipIf32Bits = function skipIf32Bits() {
+  if (process.binding('config').bits < 64) {
+    exports.skip('The tested feature is not available in 32bit builds');
   }
 };
 
@@ -757,11 +816,88 @@ exports.getTTYfd = function getTTYfd() {
   if (!tty.isatty(tty_fd)) tty_fd++;
   else if (!tty.isatty(tty_fd)) tty_fd++;
   else if (!tty.isatty(tty_fd)) tty_fd++;
-  else try {
-    tty_fd = require('fs').openSync('/dev/tty');
-  } catch (e) {
-    // There aren't any tty fd's available to use.
-    return -1;
+  else {
+    try {
+      tty_fd = fs.openSync('/dev/tty');
+    } catch (e) {
+      // There aren't any tty fd's available to use.
+      return -1;
+    }
   }
   return tty_fd;
+};
+
+// Hijack stdout and stderr
+const stdWrite = {};
+function hijackStdWritable(name, listener) {
+  const stream = process[name];
+  const _write = stdWrite[name] = stream.write;
+
+  stream.writeTimes = 0;
+  stream.write = function(data, callback) {
+    listener(data);
+    _write.call(stream, data, callback);
+    stream.writeTimes++;
+  };
+}
+
+function restoreWritable(name) {
+  process[name].write = stdWrite[name];
+  delete process[name].writeTimes;
+}
+
+function onResolvedOrRejected(promise, callback) {
+  return promise.then((result) => {
+    callback();
+    return result;
+  }, (error) => {
+    callback();
+    throw error;
+  });
+}
+
+function timeoutPromise(error, timeoutMs) {
+  let clearCallback = null;
+  let done = false;
+  const promise = onResolvedOrRejected(new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(error), timeoutMs);
+    clearCallback = () => {
+      if (done)
+        return;
+      clearTimeout(timeout);
+      resolve();
+    };
+  }), () => done = true);
+  promise.clear = clearCallback;
+  return promise;
+}
+
+exports.hijackStdout = hijackStdWritable.bind(null, 'stdout');
+exports.hijackStderr = hijackStdWritable.bind(null, 'stderr');
+exports.restoreStdout = restoreWritable.bind(null, 'stdout');
+exports.restoreStderr = restoreWritable.bind(null, 'stderr');
+
+let fd = 2;
+exports.firstInvalidFD = function firstInvalidFD() {
+  // Get first known bad file descriptor.
+  try {
+    while (fs.fstatSync(++fd));
+  } catch (e) {}
+  return fd;
+};
+
+exports.fires = function fires(promise, error, timeoutMs) {
+  if (!timeoutMs && util.isNumber(error)) {
+    timeoutMs = error;
+    error = null;
+  }
+  if (!error)
+    error = 'timeout';
+  if (!timeoutMs)
+    timeoutMs = 100;
+  const timeout = timeoutPromise(error, timeoutMs);
+  return Promise.race([
+    onResolvedOrRejected(promise, () => timeout.clear()),
+    timeout
+  ]);
 };

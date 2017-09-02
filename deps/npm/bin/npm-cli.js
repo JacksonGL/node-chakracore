@@ -14,6 +14,14 @@
     return
   }
 
+  if (!process.env.NPM_CONFIG_NODEDIR) {
+    if (process.platform === 'win32') {
+      process.env.NPM_CONFIG_NODEDIR = require('path').join(process.execPath, '..', 'sdk')
+    } else {
+      process.env.NPM_CONFIG_NODEDIR = require('path').join(process.execPath, '..', '..')
+    }
+  }
+
   process.title = 'npm'
 
   var unsupported = require('../lib/utils/unsupported.js')
@@ -83,7 +91,7 @@
     if (er) return errorHandler(er)
     npm.commands[npm.command](npm.argv, function (err) {
       // https://www.youtube.com/watch?v=7nfPu8qTiQU
-      if (!err && npm.config.get('ham-it-up') && !npm.config.get('json') && !npm.config.get('parseable')) {
+      if (!err && npm.config.get('ham-it-up') && !npm.config.get('json') && !npm.config.get('parseable') && npm.command !== 'completion') {
         output('\n 🎵 I Have the Honour to Be Your Obedient Servant,🎵 ~ npm 📜🖋\n')
       }
       errorHandler.apply(this, arguments)
