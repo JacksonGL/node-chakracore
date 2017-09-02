@@ -1,3 +1,4 @@
 [
-{"version":"v8.0.0","date":"2017-07-06","files":["headers","linux-x64","win-x64-exe","osx-x64-pkg"],"npm":"5.0.0","v8":"5.8.283.41","uv":"1.11.0","zlib":"1.2.11","openssl":"1.0.2k","modules":"57","lts":false}
+{"version":"v8.0.0","date":"2017-07-06","files":["headers","linux-x64","win-x64-exe","osx-x64-pkg"],"npm":"5.0.0","v8":"5.8.283.41","uv":"1.11.0","zlib":"1.2.11","openssl":"1.0.2k","modules":"57","lts":false},
+{"version":"v9.0.0","date":"2017-09-01","files":["headers","linux-x64","win-x64-exe","osx-x64-pkg"],"v8":"","uv":"","zlib":null,"openssl":null,"modules":null,"lts":false}
 ]
