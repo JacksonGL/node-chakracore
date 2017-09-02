@@ -81,11 +81,7 @@ Build Command:
 To run unit tests
 
 ```batch
-<<<<<<< HEAD
 vcbuild chakracore nobuild [ttd] test [x86|x64|arm]
-=======
-> vcbuild nobuild test ignore-flaky [x86|x64|arm]
->>>>>>> f839c0b54642cd8698ac7da1c8d961cb6f5d34c8
 ```
 
 To test if Node.js was built correctly with ChakraCore:
