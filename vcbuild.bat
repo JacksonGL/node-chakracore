@@ -116,12 +116,9 @@ if /i "%1"=="static"        set enable_static=1&goto arg-ok
 if /i "%1"=="v8"            set engine=v8&goto arg-ok
 if /i "%1"=="chakracore"    set engine=chakracore&goto arg-ok
 if /i "%1"=="no-NODE-OPTIONS"	set no_NODE_OPTIONS=1&goto arg-ok
-<<<<<<< HEAD
 if /i "%1"=="ttd"           set test_args=%test_args% --ttd-record=record&goto arg-ok
-=======
 if /i "%1"=="debug-http2"   set debug_http2=1&goto arg-ok
 if /i "%1"=="debug-nghttp2" set debug_nghttp2=1&goto arg-ok
->>>>>>> f839c0b54642cd8698ac7da1c8d961cb6f5d34c8
 
 echo Error: invalid command line option `%1`.
 exit /b 1
